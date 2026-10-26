@@ -6,6 +6,7 @@ pub mod hw;
 pub mod log;
 pub mod paths;
 pub mod platform;
+pub mod power;
 pub mod sys;
 pub mod tweaks;
 
@@ -82,6 +83,8 @@ pub fn run() {
             commands::tweaks::revert_tweak,
             commands::tweaks::preset_preview,
             commands::tweaks::apply_preset,
+            commands::power::power_overview,
+            commands::power::power_switch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

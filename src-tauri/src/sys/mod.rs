@@ -184,6 +184,56 @@ pub trait RestorePoints: Send + Sync {
     fn list(&self) -> SysResult<Vec<RestorePoint>>;
 }
 
+// ---- Power ------------------------------------------------------------------
+
+/// GUIDs are lower-case hyphenated strings, e.g. "381b4222-f694-41f0-9685-ff5bb260df2e".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PowerScheme {
+    pub guid: String,
+    pub name: String,
+}
+
+/// Which power source a setting value applies to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PowerSource {
+    /// Plugged in.
+    Ac,
+    /// On battery.
+    Dc,
+}
+
+pub trait Power: Send + Sync {
+    fn schemes(&self) -> SysResult<Vec<PowerScheme>>;
+    fn active(&self) -> SysResult<String>;
+    fn set_active(&self, guid: &str) -> SysResult<()>;
+    fn exists(&self, guid: &str) -> SysResult<bool>;
+    /// Copies `source` (an installed plan or a built-in template) to a new plan with the given GUID.
+    fn duplicate(&self, source: &str, dest: &str) -> SysResult<()>;
+    /// Fails if the plan is active.
+    fn delete(&self, guid: &str) -> SysResult<()>;
+    fn rename(&self, guid: &str, name: &str, description: &str) -> SysResult<()>;
+    /// `Ok(None)` when the plan or setting doesn't exist.
+    fn read(
+        &self,
+        scheme: &str,
+        subgroup: &str,
+        setting: &str,
+        source: PowerSource,
+    ) -> SysResult<Option<u32>>;
+    /// Re-applies the plan if it's active, so the change takes effect now.
+    fn write(
+        &self,
+        scheme: &str,
+        subgroup: &str,
+        setting: &str,
+        source: PowerSource,
+        value: u32,
+    ) -> SysResult<()>;
+    fn has_battery(&self) -> SysResult<bool>;
+}
+
 // ---- Context ----------------------------------------------------------------
 
 /// Everything a tweak may use to read or change the system.
@@ -192,6 +242,7 @@ pub struct SysCtx {
     pub registry: Arc<dyn Registry>,
     pub services: Arc<dyn Services>,
     pub restore_points: Arc<dyn RestorePoints>,
+    pub power: Arc<dyn Power>,
 }
 
 impl SysCtx {
@@ -204,6 +255,7 @@ impl SysCtx {
                 registry: Arc::new(win::registry::WinRegistry::new()),
                 services: Arc::new(win::services::WinServices),
                 restore_points: Arc::new(win::restore::WinRestorePoints),
+                power: Arc::new(win::power::WinPower),
             }
         }
         #[cfg(not(windows))]
@@ -212,7 +264,8 @@ impl SysCtx {
             Self {
                 registry: unsupported.clone(),
                 services: unsupported.clone(),
-                restore_points: unsupported,
+                restore_points: unsupported.clone(),
+                power: unsupported,
             }
         }
     }
@@ -281,6 +334,39 @@ mod unsupported {
         }
         fn list(&self) -> SysResult<Vec<RestorePoint>> {
             Ok(Vec::new())
+        }
+    }
+
+    impl Power for Unsupported {
+        fn schemes(&self) -> SysResult<Vec<PowerScheme>> {
+            err("list power plans")
+        }
+        fn active(&self) -> SysResult<String> {
+            err("read active power plan")
+        }
+        fn set_active(&self, _: &str) -> SysResult<()> {
+            err("switch power plan")
+        }
+        fn exists(&self, _: &str) -> SysResult<bool> {
+            err("read power plan")
+        }
+        fn duplicate(&self, _: &str, _: &str) -> SysResult<()> {
+            err("create power plan")
+        }
+        fn delete(&self, _: &str) -> SysResult<()> {
+            err("delete power plan")
+        }
+        fn rename(&self, _: &str, _: &str, _: &str) -> SysResult<()> {
+            err("rename power plan")
+        }
+        fn read(&self, _: &str, _: &str, _: &str, _: PowerSource) -> SysResult<Option<u32>> {
+            err("read power setting")
+        }
+        fn write(&self, _: &str, _: &str, _: &str, _: PowerSource, _: u32) -> SysResult<()> {
+            err("write power setting")
+        }
+        fn has_battery(&self) -> SysResult<bool> {
+            Ok(false)
         }
     }
 }

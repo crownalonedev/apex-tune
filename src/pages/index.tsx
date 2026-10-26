@@ -1,17 +1,10 @@
 import type { PageId } from "@/lib/routes";
 import { routeById } from "@/lib/routes";
 import { DashboardPage } from "./DashboardPage";
+import { PowerPage } from "./PowerPage";
 import { PlannedPage } from "./PlannedPage";
 
-const planned: Record<Exclude<PageId, "dashboard">, { stage: number; items: string[] }> = {
-  power: {
-    stage: 4,
-    items: [
-      "Install the Apex Tune Gaming plan, duplicated from Ultimate Performance",
-      "Laptop-safe variant when a battery is detected",
-      "Switch plans or restore Balanced",
-    ],
-  },
+const planned: Record<Exclude<PageId, "dashboard" | "power">, { stage: number; items: string[] }> = {
   timer: {
     stage: 5,
     items: [
@@ -55,6 +48,7 @@ const planned: Record<Exclude<PageId, "dashboard">, { stage: number; items: stri
 
 export function PageView({ page }: { page: PageId }) {
   if (page === "dashboard") return <DashboardPage />;
+  if (page === "power") return <PowerPage />;
   const { stage, items } = planned[page];
   return <PlannedPage route={routeById(page)} stage={stage} items={items} />;
 }

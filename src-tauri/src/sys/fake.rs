@@ -301,12 +301,179 @@ impl RestorePoints for FakeRestorePoints {
     }
 }
 
+// ---- Power ------------------------------------------------------------------
+
+type SettingKey = (String, String, String, PowerSource);
+
+pub struct FakePower {
+    pub schemes: Mutex<Vec<PowerScheme>>,
+    /// Built-in templates that can be duplicated even when not listed (e.g. Ultimate Performance).
+    pub templates: Mutex<Vec<String>>,
+    pub active: Mutex<String>,
+    pub settings: Mutex<HashMap<SettingKey, u32>>,
+    pub battery: Mutex<bool>,
+    /// Writes to settings whose GUID is listed here fail.
+    pub fail_settings: Mutex<Vec<String>>,
+}
+
+pub const BALANCED: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
+
+impl FakePower {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            schemes: Mutex::new(vec![PowerScheme {
+                guid: BALANCED.into(),
+                name: "Balanced".into(),
+            }]),
+            templates: Mutex::new(Vec::new()),
+            active: Mutex::new(BALANCED.into()),
+            settings: Mutex::new(HashMap::new()),
+            battery: Mutex::new(false),
+            fail_settings: Mutex::new(Vec::new()),
+        })
+    }
+
+    pub fn add_template(&self, guid: &str) {
+        lock(&self.templates).push(guid.into());
+    }
+
+    pub fn value(
+        &self,
+        scheme: &str,
+        subgroup: &str,
+        setting: &str,
+        source: PowerSource,
+    ) -> Option<u32> {
+        lock(&self.settings)
+            .get(&(scheme.into(), subgroup.into(), setting.into(), source))
+            .copied()
+    }
+
+    fn missing(op: &'static str, guid: &str) -> SysError {
+        SysError::new(
+            SysErrorKind::NotFound,
+            op,
+            guid,
+            "The power plan doesn't exist.",
+        )
+    }
+}
+
+impl Power for FakePower {
+    fn schemes(&self) -> SysResult<Vec<PowerScheme>> {
+        Ok(lock(&self.schemes).clone())
+    }
+
+    fn active(&self) -> SysResult<String> {
+        Ok(lock(&self.active).clone())
+    }
+
+    fn set_active(&self, guid: &str) -> SysResult<()> {
+        if !self.exists(guid)? {
+            return Err(Self::missing("switch power plan", guid));
+        }
+        *lock(&self.active) = guid.into();
+        Ok(())
+    }
+
+    fn exists(&self, guid: &str) -> SysResult<bool> {
+        Ok(lock(&self.schemes).iter().any(|s| s.guid == guid))
+    }
+
+    fn duplicate(&self, source: &str, dest: &str) -> SysResult<()> {
+        let listed = self.exists(source)?;
+        if !listed && !lock(&self.templates).iter().any(|t| t == source) {
+            return Err(Self::missing("create power plan", source));
+        }
+        let mut settings = lock(&self.settings);
+        let copied: Vec<(SettingKey, u32)> = settings
+            .iter()
+            .filter(|((s, ..), _)| s == source)
+            .map(|((_, g, k, src), v)| ((dest.to_owned(), g.clone(), k.clone(), *src), *v))
+            .collect();
+        settings.extend(copied);
+        lock(&self.schemes).push(PowerScheme {
+            guid: dest.into(),
+            name: format!("Copy of {source}"),
+        });
+        Ok(())
+    }
+
+    fn delete(&self, guid: &str) -> SysResult<()> {
+        if *lock(&self.active) == guid {
+            return Err(SysError::new(
+                SysErrorKind::Other,
+                "delete power plan",
+                guid,
+                "The plan is active.",
+            ));
+        }
+        lock(&self.schemes).retain(|s| s.guid != guid);
+        lock(&self.settings).retain(|(s, ..), _| s != guid);
+        Ok(())
+    }
+
+    fn rename(&self, guid: &str, name: &str, _description: &str) -> SysResult<()> {
+        let mut schemes = lock(&self.schemes);
+        let scheme = schemes
+            .iter_mut()
+            .find(|s| s.guid == guid)
+            .ok_or_else(|| Self::missing("rename power plan", guid))?;
+        scheme.name = name.into();
+        Ok(())
+    }
+
+    fn read(
+        &self,
+        scheme: &str,
+        subgroup: &str,
+        setting: &str,
+        source: PowerSource,
+    ) -> SysResult<Option<u32>> {
+        if !self.exists(scheme)? {
+            return Ok(None);
+        }
+        Ok(self.value(scheme, subgroup, setting, source))
+    }
+
+    fn write(
+        &self,
+        scheme: &str,
+        subgroup: &str,
+        setting: &str,
+        source: PowerSource,
+        value: u32,
+    ) -> SysResult<()> {
+        if lock(&self.fail_settings).iter().any(|s| s == setting) {
+            return Err(SysError::new(
+                SysErrorKind::AccessDenied,
+                "write power setting",
+                setting,
+                "Access is denied.",
+            ));
+        }
+        if !self.exists(scheme)? {
+            return Err(Self::missing("write power setting", scheme));
+        }
+        lock(&self.settings).insert(
+            (scheme.into(), subgroup.into(), setting.into(), source),
+            value,
+        );
+        Ok(())
+    }
+
+    fn has_battery(&self) -> SysResult<bool> {
+        Ok(*lock(&self.battery))
+    }
+}
+
 /// A full fake system plus typed handles to each fake for assertions.
 pub struct FakeSystem {
     pub ctx: SysCtx,
     pub registry: Arc<FakeRegistry>,
     pub services: Arc<FakeServices>,
     pub restore_points: Arc<FakeRestorePoints>,
+    pub power: Arc<FakePower>,
 }
 
 impl FakeSystem {
@@ -314,16 +481,19 @@ impl FakeSystem {
         let registry = FakeRegistry::new();
         let services = FakeServices::new();
         let restore_points = FakeRestorePoints::new(Some(true));
+        let power = FakePower::new();
         let ctx = SysCtx {
             registry: registry.clone(),
             services: services.clone(),
             restore_points: restore_points.clone(),
+            power: power.clone(),
         };
         Self {
             ctx,
             registry,
             services,
             restore_points,
+            power,
         }
     }
 }

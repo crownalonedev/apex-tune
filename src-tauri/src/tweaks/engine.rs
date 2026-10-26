@@ -225,6 +225,56 @@ impl Engine {
         }
     }
 
+    /// Applies one-off atoms that aren't a catalog tweak (e.g. switching power
+    /// plan), with the same restore point, journal and rollback guarantees.
+    /// Revert Everything undoes these too.
+    pub fn apply_action(
+        &mut self,
+        id: &str,
+        name: &str,
+        atoms: Vec<Atom>,
+    ) -> Result<(), TweakError> {
+        for atom in &atoms {
+            guard::check_atom(atom)?;
+        }
+        let mut pending = Vec::new();
+        for atom in atoms {
+            if !atom.is_applied(&self.ctx)? {
+                pending.push(atom);
+            }
+        }
+        if pending.is_empty() {
+            return Ok(());
+        }
+        self.ensure_restore_point()?;
+        let entry = self
+            .journal
+            .begin(id, name, Action::Apply, None)
+            .map_err(|e| TweakError::Journal(e.to_string()))?;
+
+        let mut txn = Txn::new(&self.ctx, &mut self.journal, entry, None);
+        let mut result = pending.iter().try_for_each(|atom| txn.write(atom.clone()));
+        if result.is_ok() {
+            for atom in &pending {
+                if !atom.is_applied(&self.ctx)? {
+                    result = Err(TweakError::Verify(format!(
+                        "Windows didn't keep {}",
+                        atom.label()
+                    )));
+                    break;
+                }
+            }
+        }
+        match result {
+            Ok(()) => {
+                self.finish(entry, Status::Done, None);
+                tracing::info!(target: ACTIVITY_TARGET, tweak = id, "{name}");
+                Ok(())
+            }
+            Err(cause) => Err(self.undo_failed(entry, name, cause)),
+        }
+    }
+
     pub fn revert(&mut self, tweak: &dyn Tweak) -> Result<(), TweakError> {
         let applied = self.journal.latest_applied(tweak.id()).ok_or_else(|| {
             TweakError::NoBackup(format!(

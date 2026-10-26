@@ -177,6 +177,7 @@ pub fn catalog() -> Vec<std::sync::Arc<dyn Tweak>> {
     vec![
         std::sync::Arc::new(gaming::game_mode()),
         std::sync::Arc::new(gaming::game_dvr_off()),
+        std::sync::Arc::new(crate::power::GamingPlan::new()),
         std::sync::Arc::new(privacy::start_suggestions_off()),
         std::sync::Arc::new(privacy::tips_off()),
         std::sync::Arc::new(privacy::lockscreen_ads_off()),

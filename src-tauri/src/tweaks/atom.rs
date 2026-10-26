@@ -4,7 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::sys::{Hive, RegData, ServiceState, StartType, SysCtx, SysResult};
+use crate::sys::{
+    Hive, PowerSource, RegData, ServiceState, StartType, SysCtx, SysError, SysErrorKind, SysResult,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", content = "data", rename_all = "camelCase")]
@@ -29,6 +31,53 @@ pub enum Atom {
         /// Also stop it now if it's running.
         stop: bool,
     },
+    /// A power plan with a fixed GUID, copied from the first source that works.
+    PowerPlan {
+        guid: String,
+        sources: Vec<String>,
+        name: String,
+        description: String,
+    },
+    PowerSetting {
+        scheme: String,
+        subgroup: String,
+        setting: String,
+        /// Human name, e.g. "Minimum processor state".
+        label: String,
+        unit: PowerUnit,
+        source: PowerSource,
+        value: u32,
+    },
+    ActivePowerPlan {
+        guid: String,
+    },
+}
+
+/// How a power setting's raw value reads to a person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "choices", rename_all = "camelCase")]
+pub enum PowerUnit {
+    Percent,
+    /// 0 means "Never".
+    Seconds,
+    /// Index into named choices.
+    Choice(Vec<String>),
+}
+
+impl PowerUnit {
+    pub fn format(&self, value: u32) -> String {
+        match self {
+            PowerUnit::Percent => format!("{value}%"),
+            PowerUnit::Seconds if value == 0 => "Never".into(),
+            PowerUnit::Seconds if value.is_multiple_of(3600) => format!("{} h", value / 3600),
+            PowerUnit::Seconds if value.is_multiple_of(60) => format!("{} min", value / 60),
+            PowerUnit::Seconds => format!("{value} s"),
+            PowerUnit::Choice(names) => names
+                .get(value as usize)
+                .cloned()
+                .unwrap_or_else(|| value.to_string()),
+        }
+    }
 }
 
 /// What was there before an atom was written.
@@ -43,6 +92,16 @@ pub enum Original {
     Service {
         /// `None` when the service isn't installed; the atom then does nothing.
         state: Option<ServiceState>,
+    },
+    PowerPlan {
+        existed: bool,
+    },
+    PowerSetting {
+        /// `None` when the plan or setting didn't exist.
+        value: Option<u32>,
+    },
+    ActivePowerPlan {
+        guid: String,
     },
 }
 
@@ -98,6 +157,12 @@ impl Atom {
                 hive, path, name, ..
             } => format!(r"{hive}\{path}\{name}"),
             Atom::Service { name, .. } => format!("Service {name}"),
+            Atom::PowerPlan { name, .. } => format!("Power plan \"{name}\""),
+            Atom::PowerSetting { label, source, .. } => match source {
+                PowerSource::Ac => format!("{label} (plugged in)"),
+                PowerSource::Dc => format!("{label} (on battery)"),
+            },
+            Atom::ActivePowerPlan { .. } => "Active power plan".into(),
         }
     }
 
@@ -111,6 +176,21 @@ impl Atom {
             }),
             Atom::Service { name, .. } => Ok(Original::Service {
                 state: ctx.services.query(name)?,
+            }),
+            Atom::PowerPlan { guid, .. } => Ok(Original::PowerPlan {
+                existed: ctx.power.exists(guid)?,
+            }),
+            Atom::PowerSetting {
+                scheme,
+                subgroup,
+                setting,
+                source,
+                ..
+            } => Ok(Original::PowerSetting {
+                value: ctx.power.read(scheme, subgroup, setting, *source)?,
+            }),
+            Atom::ActivePowerPlan { .. } => Ok(Original::ActivePowerPlan {
+                guid: ctx.power.active()?,
             }),
         }
     }
@@ -137,6 +217,45 @@ impl Atom {
                     ctx.services.stop(name)?;
                 }
                 Ok(())
+            }
+            Atom::PowerPlan {
+                guid,
+                sources,
+                name,
+                description,
+            } => {
+                if ctx.power.exists(guid)? {
+                    return Ok(());
+                }
+                let mut last = None;
+                for source in sources {
+                    match ctx.power.duplicate(source, guid) {
+                        Ok(()) => return ctx.power.rename(guid, name, description),
+                        Err(e) => last = Some(e),
+                    }
+                }
+                Err(last.unwrap_or_else(|| {
+                    SysError::new(
+                        SysErrorKind::Other,
+                        "create power plan",
+                        name,
+                        "no source plan given",
+                    )
+                }))
+            }
+            Atom::PowerSetting {
+                scheme,
+                subgroup,
+                setting,
+                source,
+                value,
+                ..
+            } => ctx.power.write(scheme, subgroup, setting, *source, *value),
+            Atom::ActivePowerPlan { guid } => {
+                if ctx.power.active()?.eq_ignore_ascii_case(guid) {
+                    return Ok(());
+                }
+                ctx.power.set_active(guid)
             }
         }
     }
@@ -180,8 +299,37 @@ impl Atom {
                 }
                 Ok(())
             }
-            _ => Err(crate::sys::SysError::new(
-                crate::sys::SysErrorKind::Other,
+            (Atom::PowerPlan { guid, .. }, Original::PowerPlan { existed }) => {
+                // Only a plan Apex Tune created is ever deleted.
+                if !existed && ctx.power.exists(guid)? {
+                    ctx.power.delete(guid)?;
+                }
+                Ok(())
+            }
+            (
+                Atom::PowerSetting {
+                    scheme,
+                    subgroup,
+                    setting,
+                    source,
+                    ..
+                },
+                Original::PowerSetting { value },
+            ) => {
+                let Some(before) = value else { return Ok(()) };
+                if ctx.power.read(scheme, subgroup, setting, *source)? == Some(*before) {
+                    return Ok(());
+                }
+                ctx.power.write(scheme, subgroup, setting, *source, *before)
+            }
+            (Atom::ActivePowerPlan { .. }, Original::ActivePowerPlan { guid }) => {
+                if ctx.power.active()?.eq_ignore_ascii_case(guid) {
+                    return Ok(());
+                }
+                ctx.power.set_active(guid)
+            }
+            _ => Err(SysError::new(
+                SysErrorKind::Other,
                 "restore",
                 self.label(),
                 "backup record doesn't match this change",
@@ -208,6 +356,16 @@ impl Atom {
             Atom::Service { name, start, .. } => {
                 Ok(ctx.services.query(name)?.is_none_or(|s| s.start == *start))
             }
+            Atom::PowerPlan { guid, .. } => ctx.power.exists(guid),
+            Atom::PowerSetting {
+                scheme,
+                subgroup,
+                setting,
+                source,
+                value,
+                ..
+            } => Ok(ctx.power.read(scheme, subgroup, setting, *source)? == Some(*value)),
+            Atom::ActivePowerPlan { guid } => Ok(ctx.power.active()?.eq_ignore_ascii_case(guid)),
         }
     }
 
@@ -227,6 +385,24 @@ impl Atom {
                     .query(name)?
                     .is_none_or(|now| now.start == before.start),
             }),
+            (Atom::PowerPlan { guid, .. }, Original::PowerPlan { existed }) => {
+                Ok(ctx.power.exists(guid)? == *existed)
+            }
+            (
+                Atom::PowerSetting {
+                    scheme,
+                    subgroup,
+                    setting,
+                    source,
+                    ..
+                },
+                Original::PowerSetting { value },
+            ) => Ok(value.is_none()
+                || !ctx.power.exists(scheme)?
+                || ctx.power.read(scheme, subgroup, setting, *source)? == *value),
+            (Atom::ActivePowerPlan { .. }, Original::ActivePowerPlan { guid }) => {
+                Ok(ctx.power.active()?.eq_ignore_ascii_case(guid))
+            }
             _ => Ok(false),
         }
     }
@@ -261,6 +437,46 @@ impl Atom {
                     start.to_string()
                 };
                 Ok(ChangePreview { target, from, to })
+            }
+            Atom::PowerPlan { guid, .. } => Ok(ChangePreview {
+                target,
+                from: if ctx.power.exists(guid)? {
+                    "Installed"
+                } else {
+                    "Not installed"
+                }
+                .into(),
+                to: "Created".into(),
+            }),
+            Atom::PowerSetting {
+                scheme,
+                subgroup,
+                setting,
+                source,
+                unit,
+                value,
+                ..
+            } => Ok(ChangePreview {
+                target,
+                from: ctx
+                    .power
+                    .read(scheme, subgroup, setting, *source)?
+                    .map_or("Plan not created yet".into(), |v| unit.format(v)),
+                to: unit.format(*value),
+            }),
+            Atom::ActivePowerPlan { guid } => {
+                let schemes = ctx.power.schemes()?;
+                let name_of = |g: &str| {
+                    schemes
+                        .iter()
+                        .find(|s| s.guid.eq_ignore_ascii_case(g))
+                        .map_or_else(|| g.to_owned(), |s| s.name.clone())
+                };
+                Ok(ChangePreview {
+                    target,
+                    from: name_of(&ctx.power.active()?),
+                    to: name_of(guid),
+                })
             }
         }
     }

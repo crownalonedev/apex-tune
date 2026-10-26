@@ -335,7 +335,30 @@ pub fn check_atom(atom: &Atom) -> Result<(), GuardViolation> {
             check_registry(*hive, path, name, value)
         }
         Atom::Service { name, .. } => check_service(name),
+        Atom::PowerPlan { guid, name, .. } => check_power_plan(guid, name),
+        Atom::PowerSetting { .. } | Atom::ActivePowerPlan { .. } => Ok(()),
     }
+}
+
+/// Windows' own plans and templates. Apex Tune creates and deletes only its own.
+const BUILT_IN_POWER_PLANS: &[&str] = &[
+    "381b4222-f694-41f0-9685-ff5bb260df2e", // Balanced
+    "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", // High performance
+    "a1841308-3541-4fab-bc81-f71556f20b4a", // Power saver
+    "e9a42b02-d5df-448d-aa00-03f14749eb61", // Ultimate Performance
+];
+
+fn check_power_plan(guid: &str, name: &str) -> Result<(), GuardViolation> {
+    if BUILT_IN_POWER_PLANS
+        .iter()
+        .any(|b| b.eq_ignore_ascii_case(guid))
+    {
+        return Err(GuardViolation {
+            target: format!("power plan {name}"),
+            reason: "it is one of Windows' built-in plans",
+        });
+    }
+    Ok(())
 }
 
 /// For file operations (cleaners): never inside anti-cheat folders.
@@ -503,6 +526,18 @@ mod tests {
             )
             .is_ok()
         );
+    }
+
+    #[test]
+    fn built_in_power_plans_are_never_managed_as_apex_plans() {
+        let atom = |guid: &str| Atom::PowerPlan {
+            guid: guid.into(),
+            sources: vec![],
+            name: "x".into(),
+            description: String::new(),
+        };
+        assert!(check_atom(&atom("381B4222-F694-41F0-9685-FF5BB260DF2E")).is_err());
+        assert!(check_atom(&atom("c855ae8b-fff9-45c7-8c29-99f6f893b54a")).is_ok());
     }
 
     #[test]

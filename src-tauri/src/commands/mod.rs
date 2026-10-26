@@ -2,5 +2,6 @@
 
 pub mod app;
 pub mod dashboard;
+pub mod power;
 pub mod safety;
 pub mod tweaks;

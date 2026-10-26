@@ -177,6 +177,32 @@ export interface BatchReport {
   restart: Restart;
 }
 
+export interface PlanInfo {
+  guid: string;
+  name: string;
+  active: boolean;
+  builtIn: boolean;
+  apex: boolean;
+}
+
+export interface PowerSettingRow {
+  label: string;
+  targetAc: string;
+  targetDc: string | null;
+  currentAc: string | null;
+  currentDc: string | null;
+}
+
+export interface PowerOverview {
+  plans: PlanInfo[];
+  laptop: boolean;
+  balancedInstalled: boolean;
+  settings: PowerSettingRow[];
+}
+
+export const APEX_PLAN_TWEAK = "power_plan";
+export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
+
 // ---- Plumbing ---------------------------------------------------------------
 
 export const ACTIVITY_EVENT = "activity://entry";
@@ -254,6 +280,24 @@ const previewOverview: Overview = {
   score: { value: null, counted: 0, applied: 0 },
 };
 
+const previewPower: PowerOverview = {
+  plans: [
+    { guid: BALANCED_PLAN, name: "Balanced", active: true, builtIn: true, apex: false },
+    { guid: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", name: "High performance", active: false, builtIn: true, apex: false },
+  ],
+  laptop: false,
+  balancedInstalled: true,
+  settings: [
+    { label: "Minimum processor state", targetAc: "100%", targetDc: null, currentAc: null, currentDc: null },
+    { label: "Core parking (minimum unparked cores)", targetAc: "100%", targetDc: null, currentAc: null, currentDc: null },
+    { label: "USB selective suspend", targetAc: "Off", targetDc: null, currentAc: null, currentDc: null },
+    { label: "PCI Express Link State Power Management", targetAc: "Off", targetDc: null, currentAc: null, currentDc: null },
+    { label: "Turn off hard disk after", targetAc: "Never", targetDc: null, currentAc: null, currentDc: null },
+    { label: "Turn off display after", targetAc: "15 min", targetDc: null, currentAc: null, currentDc: null },
+    { label: "Sleep after", targetAc: "Never", targetDc: null, currentAc: null, currentDc: null },
+  ],
+};
+
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
 
@@ -324,6 +368,14 @@ export const api = {
 
   presetPreview(): Promise<PresetItem[]> {
     return inTauri() ? call<PresetItem[]>("preset_preview") : Promise.resolve([]);
+  },
+
+  powerOverview(): Promise<PowerOverview> {
+    return inTauri() ? call<PowerOverview>("power_overview") : Promise.resolve(previewPower);
+  },
+
+  powerSwitch(guid: string): Promise<PowerOverview> {
+    return inTauri() ? call<PowerOverview>("power_switch", { guid }) : notInPreview();
   },
 
   applyPreset(ids: string[]): Promise<BatchReport> {
