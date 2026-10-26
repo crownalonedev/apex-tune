@@ -10,8 +10,21 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 // ---- Types mirrored from src-tauri ----------------------------------------
 
+export type AppErrorKind =
+  | "io"
+  | "windows"
+  | "other"
+  | "refused"
+  | "notApplicable"
+  | "verify"
+  | "journal"
+  | "noBackup"
+  | "restorePointRequired"
+  | "rolledBack"
+  | "rollbackFailed";
+
 export interface AppError {
-  kind: "io" | "windows" | "other";
+  kind: AppErrorKind;
   message: string;
 }
 
@@ -31,6 +44,27 @@ export interface ActivityEntry {
   level: ActivityLevel;
   message: string;
   subject: string | null;
+}
+
+export interface RestorePoint {
+  sequence: number;
+  description: string;
+  /** WMI datetime, e.g. "20261026120000.000000-000". */
+  created: string;
+}
+
+export interface SafetyStatus {
+  /** System Protection on the system drive; null if it can't be read. */
+  protectionEnabled: boolean | null;
+  restorePoint: RestorePoint | null;
+  restorePointSkipped: boolean;
+  activeChanges: number;
+  unreadableBackups: string[];
+}
+
+export interface RevertReport {
+  reverted: string[];
+  failed: { tweak: string; message: string }[];
 }
 
 // ---- Plumbing ---------------------------------------------------------------
@@ -74,6 +108,17 @@ const previewInfo: AppInfo = {
   dataDir: "",
 };
 
+const previewSafety: SafetyStatus = {
+  protectionEnabled: null,
+  restorePoint: null,
+  restorePointSkipped: false,
+  activeChanges: 0,
+  unreadableBackups: [],
+};
+
+const notInPreview = (): Promise<never> =>
+  Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
+
 // ---- Commands -------------------------------------------------------------
 
 export const api = {
@@ -83,6 +128,34 @@ export const api = {
 
   activityRecent(): Promise<ActivityEntry[]> {
     return inTauri() ? call<ActivityEntry[]>("activity_recent") : Promise.resolve([]);
+  },
+
+  safetyStatus(): Promise<SafetyStatus> {
+    return inTauri() ? call<SafetyStatus>("safety_status") : Promise.resolve(previewSafety);
+  },
+
+  createRestorePoint(): Promise<SafetyStatus> {
+    return inTauri() ? call<SafetyStatus>("create_restore_point") : notInPreview();
+  },
+
+  enableSystemProtection(): Promise<SafetyStatus> {
+    return inTauri() ? call<SafetyStatus>("enable_system_protection") : notInPreview();
+  },
+
+  skipRestorePoint(): Promise<SafetyStatus> {
+    return inTauri() ? call<SafetyStatus>("skip_restore_point") : notInPreview();
+  },
+
+  revertEverything(): Promise<RevertReport> {
+    return inTauri() ? call<RevertReport>("revert_everything") : notInPreview();
+  },
+
+  listRestorePoints(): Promise<RestorePoint[]> {
+    return inTauri() ? call<RestorePoint[]>("list_restore_points") : Promise.resolve([]);
+  },
+
+  takeRecoveryMessages(): Promise<string[]> {
+    return inTauri() ? call<string[]>("take_recovery_messages") : Promise.resolve([]);
   },
 };
 

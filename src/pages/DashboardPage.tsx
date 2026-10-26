@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/layout/PageHeader";
+import { SafetyPanel } from "@/components/SafetyPanel";
 import { Skeleton } from "@/components/ui/skeleton";
 import { routeById } from "@/lib/routes";
 import { useAppStore } from "@/stores/app";
@@ -32,6 +33,10 @@ export function DashboardPage() {
           Hardware, live usage and the Optimization Score arrive in build stage 3.
         </p>
       </section>
+
+      <div className="mt-10 max-w-2xl">
+        <SafetyPanel />
+      </div>
     </>
   );
 }

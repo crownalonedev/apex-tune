@@ -1,8 +1,12 @@
+pub mod backup;
 pub mod commands;
 pub mod error;
+pub mod guard;
 pub mod log;
 pub mod paths;
 pub mod platform;
+pub mod sys;
+pub mod tweaks;
 
 use std::sync::Arc;
 
@@ -54,12 +58,36 @@ pub fn run() {
             if !info.elevated && cfg!(windows) {
                 tracing::warn!("Apex Tune is not running as administrator; changes will fail");
             }
+            app.manage(start_engine());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
             commands::app::activity_recent,
+            commands::safety::safety_status,
+            commands::safety::create_restore_point,
+            commands::safety::enable_system_protection,
+            commands::safety::skip_restore_point,
+            commands::safety::revert_everything,
+            commands::safety::list_restore_points,
+            commands::safety::take_recovery_messages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");
+}
+
+/// Opens the journal and rolls back anything a crash left half-done. If the
+/// backups folder can't be read, the engine stays off and changes are refused.
+fn start_engine() -> commands::safety::EngineState {
+    match backup::journal::Journal::open(&paths::backups_dir()) {
+        Ok(journal) => {
+            let mut engine = tweaks::Engine::new(sys::SysCtx::native(), journal, tweaks::catalog());
+            let recovery = engine.recover();
+            commands::safety::EngineState::new(Ok(engine), recovery)
+        }
+        Err(e) => {
+            tracing::error!(target: ACTIVITY_TARGET, "Backups folder unavailable, changes are disabled: {e}");
+            commands::safety::EngineState::new(Err(e.to_string()), Vec::new())
+        }
+    }
 }

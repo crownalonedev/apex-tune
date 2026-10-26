@@ -26,6 +26,10 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+# Exposes the in-memory OS backends outside unit tests.
+fake-sys = []
+
 [lib]
 name = "apex_tune_lib"
 crate-type = ["rlib"]
@@ -53,8 +57,12 @@ windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Security_Authorization",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_Services",
   "Win32_System_Threading",
 ] }
+windows-registry = "0.6.1"
+wmi = "0.18"
 
 [dev-dependencies]
 tempfile = "3"

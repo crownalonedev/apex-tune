@@ -8,6 +8,8 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("Windows API call failed: {0}")]
     Windows(String),
+    #[error(transparent)]
+    Tweak(#[from] crate::tweaks::TweakError),
     #[error("{0}")]
     Other(String),
 }
@@ -17,6 +19,7 @@ impl AppError {
         match self {
             AppError::Io(_) => "io",
             AppError::Windows(_) => "windows",
+            AppError::Tweak(e) => e.kind(),
             AppError::Other(_) => "other",
         }
     }

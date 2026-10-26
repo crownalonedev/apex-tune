@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
+import { api } from "@/lib/tauri";
 import { ActivityDrawer } from "@/components/layout/ActivityDrawer";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageView } from "@/pages";
@@ -13,6 +14,10 @@ export default function App() {
 
   useEffect(() => {
     void loadInfo();
+    // Changes interrupted last time were rolled back at startup; say so once.
+    void api.takeRecoveryMessages().then((messages) => {
+      for (const message of messages) toast.warning(message, { duration: 15_000 });
+    });
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void connectActivity().then((fn) => {
