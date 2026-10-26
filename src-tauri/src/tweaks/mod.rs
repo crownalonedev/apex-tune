@@ -8,6 +8,9 @@
 pub mod atom;
 pub mod engine;
 pub mod error;
+pub mod gaming;
+pub mod preset;
+pub mod privacy;
 
 use serde::Serialize;
 
@@ -74,6 +77,8 @@ pub enum TweakState {
     /// Some of its settings are in place, some aren't.
     Partial,
     NotApplicable(String),
+    /// Its state couldn't be read.
+    Unknown(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,9 +172,17 @@ impl Tweak for StaticTweak {
     }
 }
 
-/// Every tweak Apex Tune offers. Filled in by the category stages.
+/// Every tweak Apex Tune offers, in display order.
 pub fn catalog() -> Vec<std::sync::Arc<dyn Tweak>> {
-    Vec::new()
+    vec![
+        std::sync::Arc::new(gaming::game_mode()),
+        std::sync::Arc::new(gaming::game_dvr_off()),
+        std::sync::Arc::new(privacy::start_suggestions_off()),
+        std::sync::Arc::new(privacy::tips_off()),
+        std::sync::Arc::new(privacy::lockscreen_ads_off()),
+        std::sync::Arc::new(privacy::explorer_ads_off()),
+        std::sync::Arc::new(privacy::ad_id_off()),
+    ]
 }
 
 #[cfg(test)]

@@ -24,6 +24,8 @@ export default defineConfig({
     // WebView2 on Windows 11 is evergreen Chromium.
     target: "chrome120",
     sourcemap: false,
+    // Assets load from disk inside the app, so one larger bundle (Recharts) costs nothing.
+    chunkSizeWarningLimit: 1500,
   },
   test: {
     environment: "jsdom",

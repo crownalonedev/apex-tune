@@ -22,7 +22,7 @@ describe("App shell", () => {
 
   it("shows preview system info and opens the activity log", async () => {
     render(<App />);
-    expect(await screen.findByText(/Browser preview \(not Windows\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/Browser preview. Nothing here touches your system./)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Activity log" }));
     expect(screen.getByRole("region", { name: "Activity log" })).toBeInTheDocument();

@@ -20,6 +20,8 @@
   --signal: #7cc4fa;
   --signal-soft: rgb(124 196 250 / 0.14);
   --signal-ink: #0e2233;
+  /* Chart stroke: validated against --panel for the dark band. */
+  --chart: #3f9be0;
   --safe: #5cc49a;
   --moderate: #e5b54a;
   --advanced: #ee7470;
@@ -39,6 +41,7 @@
   --signal: #1c7fc4;
   --signal-soft: rgb(28 127 196 / 0.12);
   --signal-ink: #ffffff;
+  --chart: #1c7fc4;
   --safe: #1f8f63;
   --moderate: #a66f00;
   --advanced: #c23f3b;
@@ -58,6 +61,7 @@
   --color-signal: var(--signal);
   --color-signal-soft: var(--signal-soft);
   --color-signal-ink: var(--signal-ink);
+  --color-chart: var(--chart);
   --color-safe: var(--safe);
   --color-moderate: var(--moderate);
   --color-advanced: var(--advanced);

@@ -67,9 +67,121 @@ export interface RevertReport {
   failed: { tweak: string; message: string }[];
 }
 
+export type GpuVendor = "nvidia" | "amd" | "intel" | "other";
+export type DriveKind = "nvmeSsd" | "ssd" | "hdd" | "unknown";
+
+export interface HardwareSummary {
+  cpu: { name: string; physicalCores: number | null; logicalCores: number; baseMhz: number };
+  memoryBytes: number;
+  gpus: {
+    name: string;
+    vendor: GpuVendor;
+    driverVersion: string;
+    nvidiaDriver: string | null;
+    vramBytes: number | null;
+  }[];
+  drives: { name: string; kind: DriveKind; sizeBytes: number }[];
+  volumes: { mount: string; totalBytes: number; freeBytes: number }[];
+  windows: {
+    productName: string;
+    displayVersion: string | null;
+    build: number;
+    revision: number | null;
+    edition: string | null;
+  } | null;
+  hasBattery: boolean;
+  warnings: string[];
+}
+
+export interface StatsTick {
+  at: number;
+  cpuPercent: number;
+  ramUsedBytes: number;
+  ramTotalBytes: number;
+  processes: number;
+  gpuPercent: number | null;
+}
+
+export type Risk = "safe" | "moderate" | "advanced";
+export type Restart = "none" | "explorer" | "signOut" | "reboot";
+export type Category =
+  | "gaming"
+  | "input"
+  | "network"
+  | "visual"
+  | "privacy"
+  | "startup"
+  | "services"
+  | "updates"
+  | "power"
+  | "timer"
+  | "nvidia"
+  | "system";
+
+export interface TweakMeta {
+  id: string;
+  name: string;
+  description: string;
+  category: Category;
+  risk: Risk;
+  restart: Restart;
+  recommended: boolean;
+}
+
+export type TweakState =
+  | { state: "applied" }
+  | { state: "notApplied" }
+  | { state: "partial" }
+  | { state: "notApplicable"; reason: string }
+  | { state: "unknown"; reason: string };
+
+export interface TweakInfo extends TweakMeta {
+  state: TweakState;
+  revertible: boolean;
+}
+
+export interface Score {
+  value: number | null;
+  counted: number;
+  applied: number;
+}
+
+export interface Overview {
+  tweaks: TweakInfo[];
+  score: Score;
+}
+
+export interface ChangePreview {
+  target: string;
+  from: string;
+  to: string;
+}
+
+export interface PresetItem extends TweakMeta {
+  state: TweakState;
+  changes: ChangePreview[];
+}
+
+export type BatchStatus = "applied" | "alreadyApplied" | "failed";
+
+export interface BatchResult {
+  id: string;
+  name: string;
+  status: BatchStatus;
+  errorKind: AppErrorKind | null;
+  error: string | null;
+}
+
+export interface BatchReport {
+  results: BatchResult[];
+  restart: Restart;
+}
+
 // ---- Plumbing ---------------------------------------------------------------
 
 export const ACTIVITY_EVENT = "activity://entry";
+export const STATS_EVENT = "stats://tick";
+export const PRESET_PROGRESS_EVENT = "preset://progress";
 
 export const inTauri = (): boolean => isTauri();
 
@@ -116,6 +228,32 @@ const previewSafety: SafetyStatus = {
   unreadableBackups: [],
 };
 
+const GB = 1024 ** 3;
+
+const previewHardware: HardwareSummary = {
+  cpu: { name: "Preview CPU (8 cores)", physicalCores: 8, logicalCores: 16, baseMhz: 4200 },
+  memoryBytes: 32 * GB,
+  gpus: [
+    {
+      name: "Preview NVIDIA GPU",
+      vendor: "nvidia",
+      driverVersion: "32.0.15.6094",
+      nvidiaDriver: "560.94",
+      vramBytes: 12 * GB,
+    },
+  ],
+  drives: [{ name: "Preview NVMe drive", kind: "nvmeSsd", sizeBytes: 1000 * 1000 ** 3 }],
+  volumes: [{ mount: "C:\\", totalBytes: 930 * GB, freeBytes: 512 * GB }],
+  windows: null,
+  hasBattery: false,
+  warnings: [],
+};
+
+const previewOverview: Overview = {
+  tweaks: [],
+  score: { value: null, counted: 0, applied: 0 },
+};
+
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
 
@@ -157,9 +295,66 @@ export const api = {
   takeRecoveryMessages(): Promise<string[]> {
     return inTauri() ? call<string[]>("take_recovery_messages") : Promise.resolve([]);
   },
+
+  hardwareSummary(refresh = false): Promise<HardwareSummary> {
+    return inTauri()
+      ? call<HardwareSummary>("hardware_summary", { refresh })
+      : Promise.resolve(previewHardware);
+  },
+
+  statsSubscribe(): Promise<void> {
+    return inTauri() ? call<void>("stats_subscribe") : Promise.resolve();
+  },
+
+  statsUnsubscribe(): Promise<void> {
+    return inTauri() ? call<void>("stats_unsubscribe") : Promise.resolve();
+  },
+
+  tweaksOverview(): Promise<Overview> {
+    return inTauri() ? call<Overview>("tweaks_overview") : Promise.resolve(previewOverview);
+  },
+
+  applyTweak(id: string): Promise<"applied" | "alreadyApplied"> {
+    return inTauri() ? call("apply_tweak", { id }) : notInPreview();
+  },
+
+  revertTweak(id: string): Promise<void> {
+    return inTauri() ? call<void>("revert_tweak", { id }) : notInPreview();
+  },
+
+  presetPreview(): Promise<PresetItem[]> {
+    return inTauri() ? call<PresetItem[]>("preset_preview") : Promise.resolve([]);
+  },
+
+  applyPreset(ids: string[]): Promise<BatchReport> {
+    return inTauri() ? call<BatchReport>("apply_preset", { ids }) : notInPreview();
+  },
 };
 
 // ---- Events ---------------------------------------------------------------
+
+/** Live stats. Outside Tauri, emits synthetic preview ticks. */
+export async function onStats(handler: (tick: StatsTick) => void): Promise<UnlistenFn> {
+  if (inTauri()) return listen<StatsTick>(STATS_EVENT, (event) => handler(event.payload));
+  let t = 0;
+  const timer = setInterval(() => {
+    t += 1;
+    handler({
+      at: Date.now(),
+      cpuPercent: 18 + 10 * Math.sin(t / 5) + Math.random() * 6,
+      ramUsedBytes: (11 + Math.sin(t / 9)) * GB,
+      ramTotalBytes: 32 * GB,
+      processes: 212,
+      gpuPercent: 40 + 25 * Math.sin(t / 7) + Math.random() * 8,
+    });
+  }, 1000);
+  return () => clearInterval(timer);
+}
+
+export async function onPresetProgress(handler: (result: BatchResult) => void): Promise<UnlistenFn> {
+  if (!inTauri()) return () => {};
+  return listen<BatchResult>(PRESET_PROGRESS_EVENT, (event) => handler(event.payload));
+}
 
 export async function onActivity(handler: (entry: ActivityEntry) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => {};

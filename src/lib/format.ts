@@ -19,3 +19,23 @@ export function formatWmiDate(value: string): string {
 export function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }
+
+/** Bytes in binary units: "16 GB", "931 GB", "1.8 TB". */
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = value >= 100 || unit === 0 ? 0 : 1;
+  return `${value.toFixed(digits).replace(/\.0$/, "")} ${units[unit]}`;
+}
+
+/** Decimal units, the way drive makers label sizes: "1 TB", "500 GB". */
+export function formatDriveSize(bytes: number): string {
+  const tb = bytes / 1000 ** 4;
+  if (tb >= 1) return `${Number(tb.toFixed(1))} TB`;
+  return `${Math.round(bytes / 1000 ** 3)} GB`;
+}

@@ -2,6 +2,7 @@ pub mod backup;
 pub mod commands;
 pub mod error;
 pub mod guard;
+pub mod hw;
 pub mod log;
 pub mod paths;
 pub mod platform;
@@ -45,6 +46,8 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .manage(activity.clone())
+        .manage(commands::dashboard::HardwareCache::default())
+        .manage(hw::stats::Sampler::default())
         .setup(move |app| {
             let handle = app.handle().clone();
             activity.set_sink(move |entry| {
@@ -71,6 +74,14 @@ pub fn run() {
             commands::safety::revert_everything,
             commands::safety::list_restore_points,
             commands::safety::take_recovery_messages,
+            commands::dashboard::hardware_summary,
+            commands::dashboard::stats_subscribe,
+            commands::dashboard::stats_unsubscribe,
+            commands::tweaks::tweaks_overview,
+            commands::tweaks::apply_tweak,
+            commands::tweaks::revert_tweak,
+            commands::tweaks::preset_preview,
+            commands::tweaks::apply_preset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

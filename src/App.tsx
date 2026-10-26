@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Toaster, toast } from "sonner";
 import { api } from "@/lib/tauri";
 import { ActivityDrawer } from "@/components/layout/ActivityDrawer";
+import { RestartBanner } from "@/components/layout/RestartBanner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { PageView } from "@/pages";
 import { useActivityStore } from "@/stores/activity";
@@ -34,6 +35,7 @@ export default function App() {
     <div className="flex h-full">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
+        <RestartBanner />
         <main className="flex-1 overflow-y-auto px-10 pt-8 pb-12">
           <div className="mx-auto max-w-[1180px]">
             <PageView page={page} />

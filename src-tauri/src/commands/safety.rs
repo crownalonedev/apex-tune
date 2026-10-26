@@ -38,7 +38,7 @@ impl EngineState {
 }
 
 /// Runs engine work off the async runtime: registry, SCM and WMI calls block.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     state: State<'_, EngineState>,
     f: impl FnOnce(&mut Engine) -> AppResult<T> + Send + 'static,
 ) -> AppResult<T> {

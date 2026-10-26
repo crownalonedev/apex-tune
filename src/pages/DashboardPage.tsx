@@ -1,53 +1,43 @@
+import { useEffect } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { SafetyPanel } from "@/components/SafetyPanel";
-import { Skeleton } from "@/components/ui/skeleton";
+import { HardwarePanel } from "@/components/dashboard/HardwarePanel";
+import { LiveStats } from "@/components/dashboard/LiveStats";
+import { OptimizeDialog } from "@/components/dashboard/OptimizeDialog";
+import { ScoreDial } from "@/components/dashboard/ScoreDial";
 import { routeById } from "@/lib/routes";
-import { useAppStore } from "@/stores/app";
+import { useTweaksStore } from "@/stores/tweaks";
 
 export function DashboardPage() {
   const route = routeById("dashboard");
-  const info = useAppStore((s) => s.info);
-  const error = useAppStore((s) => s.infoError);
+  const overview = useTweaksStore((s) => s.overview);
+  const overviewError = useTweaksStore((s) => s.error);
+  const loadOverview = useTweaksStore((s) => s.load);
+
+  useEffect(() => {
+    void loadOverview();
+  }, [loadOverview]);
 
   return (
     <>
-      <PageHeader title={route.label} summary={route.summary} />
+      <PageHeader title={route.label} summary={route.summary} actions={<OptimizeDialog />} />
 
-      <section aria-labelledby="system-heading" className="mt-8 max-w-2xl">
-        <h2 id="system-heading" className="text-[19px] font-semibold">
-          This system
-        </h2>
-        {error ? (
-          <p role="alert" className="mt-3 text-danger">
-            Couldn't read system details: {error.message}
-          </p>
-        ) : (
-          <dl className="mt-3 divide-y divide-line border-y border-line">
-            <Row label="Windows" value={info?.osName} />
-            <Row label="Kernel build" value={info?.osBuild || (info ? "Unknown" : undefined)} />
-            <Row label="Apex Tune" value={info ? `Version ${info.version}` : undefined} />
-            <Row label="Backups and logs" value={info?.dataDir || (info ? "Not available in preview" : undefined)} />
-          </dl>
-        )}
-        <p className="mt-4 text-[13px] text-faint">
-          Hardware, live usage and the Optimization Score arrive in build stage 3.
-        </p>
-      </section>
+      <div className="mt-8 grid gap-x-10 gap-y-8 lg:grid-cols-[minmax(240px,320px)_1fr]">
+        <div>
+          <ScoreDial score={overview?.score ?? null} />
+          {overviewError && (
+            <p role="alert" className="mt-2 text-center text-[13px] text-danger">
+              {overviewError.message}
+            </p>
+          )}
+        </div>
+        <LiveStats />
+      </div>
 
-      <div className="mt-10 max-w-2xl">
+      <div className="mt-10 grid gap-x-10 gap-y-10 xl:grid-cols-2">
+        <HardwarePanel />
         <SafetyPanel />
       </div>
     </>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string | undefined }) {
-  return (
-    <div className="flex gap-6 py-2.5">
-      <dt className="w-40 shrink-0 text-muted">{label}</dt>
-      <dd className="selectable min-w-0 flex-1 break-words">
-        {value === undefined ? <Skeleton className="h-4 w-56" /> : value}
-      </dd>
-    </div>
   );
 }

@@ -177,6 +177,10 @@ impl Engine {
         &self.journal
     }
 
+    pub fn catalog(&self) -> &[Arc<dyn Tweak>] {
+        &self.catalog
+    }
+
     pub fn tweak(&self, id: &str) -> Option<Arc<dyn Tweak>> {
         self.catalog.iter().find(|t| t.id() == id).cloned()
     }
