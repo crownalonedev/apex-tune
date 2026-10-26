@@ -1,0 +1,127 @@
+@import "tailwindcss";
+@import "@fontsource-variable/archivo/wdth.css";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Tokens. A cool slate bench with one signal colour (ice blue) for focus,
+ * selection and "applied" state. Risk colours are reserved for risk badges.
+ */
+:root,
+[data-theme="dark"] {
+  --bg: #121820;
+  --panel: #18202b;
+  --panel-raised: #1e2834;
+  --line: #2a3646;
+  --line-strong: #3a4859;
+  --text: #e8edf3;
+  --text-muted: #8f9bad;
+  --text-faint: #66738a;
+  --signal: #7cc4fa;
+  --signal-soft: rgb(124 196 250 / 0.14);
+  --signal-ink: #0e2233;
+  --safe: #5cc49a;
+  --moderate: #e5b54a;
+  --advanced: #ee7470;
+  --danger: #ee7470;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-raised: #f6f8fb;
+  --line: #d6dde6;
+  --line-strong: #b8c3d1;
+  --text: #16202c;
+  --text-muted: #556274;
+  --text-faint: #7b879a;
+  --signal: #1c7fc4;
+  --signal-soft: rgb(28 127 196 / 0.12);
+  --signal-ink: #ffffff;
+  --safe: #1f8f63;
+  --moderate: #a66f00;
+  --advanced: #c23f3b;
+  --danger: #c23f3b;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-raised: var(--panel-raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-signal-ink: var(--signal-ink);
+  --color-safe: var(--safe);
+  --color-moderate: var(--moderate);
+  --color-advanced: var(--advanced);
+  --color-danger: var(--danger);
+
+  --font-sans: "Archivo Variable", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-feature-settings: "tnum" 1;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* Headings are set condensed: the width axis is the type's personality. */
+  h1,
+  h2,
+  h3 {
+    font-stretch: 78%;
+    letter-spacing: -0.005em;
+    line-height: 1.15;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--signal-soft);
+  }
+
+  /* Text a user may want to copy (paths, log lines) opts back in. */
+  .selectable {
+    user-select: text;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

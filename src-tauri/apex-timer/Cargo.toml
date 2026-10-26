@@ -1,0 +1,12 @@
+[package]
+name = "apex-timer"
+description = "Tray helper that holds the system timer resolution for Apex Tune"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
