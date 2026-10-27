@@ -66,6 +66,20 @@ pub struct HardwareSummary {
     pub warnings: Vec<String>,
 }
 
+/// Fixed (non-removable) volumes and their free space.
+pub fn detect_volumes() -> Vec<VolumeInfo> {
+    Disks::new_with_refreshed_list()
+        .list()
+        .iter()
+        .filter(|d| !d.is_removable())
+        .map(|d| VolumeInfo {
+            mount: d.mount_point().display().to_string(),
+            total_bytes: d.total_space(),
+            free_bytes: d.available_space(),
+        })
+        .collect()
+}
+
 pub fn detect(ctx: &SysCtx) -> HardwareSummary {
     let mut warnings = Vec::new();
 

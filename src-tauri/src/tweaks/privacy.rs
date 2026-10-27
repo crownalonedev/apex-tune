@@ -26,6 +26,7 @@ fn meta(
 
 pub fn start_suggestions_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: meta(
             "start_suggestions_off",
             "No Start menu suggestions",
@@ -57,6 +58,7 @@ pub fn start_suggestions_off() -> StaticTweak {
 
 pub fn tips_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: meta(
             "tips_off",
             "No tips and \"finish setup\" prompts",
@@ -85,6 +87,7 @@ pub fn tips_off() -> StaticTweak {
 
 pub fn lockscreen_ads_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: meta(
             "lockscreen_ads_off",
             "No lock screen ads",
@@ -102,6 +105,7 @@ pub fn lockscreen_ads_off() -> StaticTweak {
 
 pub fn explorer_ads_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: meta(
             "explorer_ads_off",
             "No File Explorer promotions",
@@ -121,6 +125,7 @@ pub fn explorer_ads_off() -> StaticTweak {
 
 pub fn ad_id_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: meta(
             "ad_id_off",
             "No advertising ID",
@@ -168,6 +173,7 @@ fn custom(
 
 pub fn widgets_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: custom(
             "widgets_off",
             "Turn off Widgets",
@@ -190,6 +196,7 @@ pub fn widgets_off() -> StaticTweak {
 
 pub fn edge_background_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: custom(
             "edge_background_off",
             "Stop Edge running in the background",
@@ -221,6 +228,7 @@ pub fn edge_background_off() -> StaticTweak {
 
 pub fn background_apps_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: custom(
             "background_apps_off",
             "Stop Store apps running in the background",
@@ -243,6 +251,7 @@ pub fn background_apps_off() -> StaticTweak {
 
 pub fn web_search_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: custom(
             "web_search_off",
             "No web results in Start search",
@@ -265,6 +274,7 @@ pub fn web_search_off() -> StaticTweak {
 
 pub fn telemetry_required() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: custom(
             "telemetry_required",
             "Send only required diagnostic data",
@@ -287,6 +297,7 @@ pub fn telemetry_required() -> StaticTweak {
 
 pub fn recall_off() -> StaticTweak {
     StaticTweak {
+        refresh: crate::tweaks::Refresh::Nothing,
         meta: custom(
             "recall_off",
             "Turn off Recall snapshots",

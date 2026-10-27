@@ -353,6 +353,7 @@ pub fn check_atom(atom: &Atom) -> Result<(), GuardViolation> {
         } => check_own_task(path, command, *highest),
         Atom::TaskEnabled { path, .. } => check_task(path),
         Atom::AppRemoved { name, .. } => check_app(name),
+        Atom::Spi { .. } | Atom::DisplayRefresh { .. } | Atom::Dns { .. } => Ok(()),
     }
 }
 

@@ -4,17 +4,10 @@ import { DashboardPage } from "./DashboardPage";
 import { DebloatPage } from "./DebloatPage";
 import { PowerPage } from "./PowerPage";
 import { TimerPage } from "./TimerPage";
+import { TweaksPage } from "./TweaksPage";
 import { PlannedPage } from "./PlannedPage";
 
-const planned: Record<Exclude<PageId, "dashboard" | "power" | "timer" | "debloat">, { stage: number; items: string[] }> = {
-  tweaks: {
-    stage: 7,
-    items: [
-      "Gaming, input, network and visual tweaks with risk and restart badges",
-      "Storage cleanup with reclaimed space",
-      "Steam library detection and a Minecraft Java RAM helper",
-    ],
-  },
+const planned: Record<Exclude<PageId, "dashboard" | "power" | "timer" | "debloat" | "tweaks">, { stage: number; items: string[] }> = {
   nvidia: {
     stage: 8,
     items: [
@@ -37,6 +30,7 @@ export function PageView({ page }: { page: PageId }) {
   if (page === "power") return <PowerPage />;
   if (page === "timer") return <TimerPage />;
   if (page === "debloat") return <DebloatPage />;
+  if (page === "tweaks") return <TweaksPage />;
   const { stage, items } = planned[page];
   return <PlannedPage route={routeById(page)} stage={stage} items={items} />;
 }

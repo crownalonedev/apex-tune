@@ -5,6 +5,7 @@ import { HardwarePanel } from "@/components/dashboard/HardwarePanel";
 import { LiveStats } from "@/components/dashboard/LiveStats";
 import { OptimizeDialog } from "@/components/dashboard/OptimizeDialog";
 import { ScoreDial } from "@/components/dashboard/ScoreDial";
+import { SystemCheck } from "@/components/dashboard/SystemCheck";
 import { routeById } from "@/lib/routes";
 import { useTweaksStore } from "@/stores/tweaks";
 
@@ -35,7 +36,11 @@ export function DashboardPage() {
       </div>
 
       <div className="mt-10 grid gap-x-10 gap-y-10 xl:grid-cols-2">
+        <SystemCheck />
         <HardwarePanel />
+      </div>
+
+      <div className="mt-10 max-w-3xl">
         <SafetyPanel />
       </div>
     </>

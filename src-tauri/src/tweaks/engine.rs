@@ -219,6 +219,7 @@ impl Engine {
             Ok(()) => {
                 self.finish(entry, Status::Done, None);
                 tracing::info!(target: ACTIVITY_TARGET, tweak = tweak.id(), "Applied {name}");
+                self.after_change(tweak);
                 Ok(ApplyOutcome::Applied)
             }
             Err(cause) => Err(self.undo_failed(entry, name, cause)),
@@ -341,6 +342,9 @@ impl Engine {
                     tracing::error!("Reverted {name} but couldn't update its backup record: {e}");
                 }
                 tracing::info!(target: ACTIVITY_TARGET, tweak = source.tweak_id.as_str(), "Reverted {name}");
+                if let Some(t) = tweak {
+                    self.after_change(t);
+                }
                 Ok(())
             }
             Err(cause) => Err(self.undo_failed(entry, &name, cause)),
@@ -460,6 +464,15 @@ impl Engine {
             .map_err(|e| TweakError::Journal(e.to_string()))?;
         tracing::warn!(target: ACTIVITY_TARGET, "Continuing this session without a restore point");
         Ok(())
+    }
+
+    fn after_change(&self, tweak: &dyn Tweak) {
+        if let Err(e) = tweak.after_change(&self.ctx) {
+            tracing::warn!(
+                "{} is saved but needs a sign-out to take effect: {e}",
+                tweak.name()
+            );
+        }
     }
 
     /// Rolls back a failed transaction and builds the error to report.
@@ -612,6 +625,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         sys.services.install("vgc", StartType::Manual, true);
         let tweak = StaticTweak {
+            refresh: crate::tweaks::Refresh::Nothing,
             meta: meta("evil"),
             atoms: || {
                 vec![
@@ -672,14 +686,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut engine = engine(&sys, dir.path());
         let first = StaticTweak {
+            refresh: crate::tweaks::Refresh::Nothing,
             meta: meta("first"),
             atoms: || vec![Atom::reg_dword(Hive::CurrentUser, PATH, "X", 1)],
         };
         let second = StaticTweak {
+            refresh: crate::tweaks::Refresh::Nothing,
             meta: meta("second"),
             atoms: || vec![Atom::reg_dword(Hive::CurrentUser, PATH, "X", 2)],
         };
         let third = StaticTweak {
+            refresh: crate::tweaks::Refresh::Nothing,
             meta: meta("third"),
             atoms: || vec![Atom::reg_dword(Hive::LocalMachine, PATH, "Y", 1)],
         };

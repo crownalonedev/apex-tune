@@ -261,6 +261,90 @@ pub trait Apps: Send + Sync {
     fn restore(&self, full_name: &str) -> SysResult<()>;
 }
 
+// ---- Desktop (SystemParametersInfo, displays) --------------------------------
+
+/// Boolean desktop settings applied through SystemParametersInfo, which
+/// updates both the registry and the running session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SpiFlag {
+    MenuAnimation,
+    ComboBoxAnimation,
+    ListBoxSmoothScrolling,
+    TooltipAnimation,
+    SelectionFade,
+    DropShadow,
+    CursorShadow,
+    ClientAreaAnimation,
+    DragFullWindows,
+    FontSmoothing,
+    MinimizeAnimation,
+}
+
+impl SpiFlag {
+    pub fn label(self) -> &'static str {
+        match self {
+            SpiFlag::MenuAnimation => "Menu animations",
+            SpiFlag::ComboBoxAnimation => "Drop-down list animation",
+            SpiFlag::ListBoxSmoothScrolling => "Smooth-scrolling list boxes",
+            SpiFlag::TooltipAnimation => "Tooltip animation",
+            SpiFlag::SelectionFade => "Fade menu items after clicking",
+            SpiFlag::DropShadow => "Window shadows",
+            SpiFlag::CursorShadow => "Mouse pointer shadow",
+            SpiFlag::ClientAreaAnimation => "Animations inside windows",
+            SpiFlag::DragFullWindows => "Window contents while dragging",
+            SpiFlag::FontSmoothing => "Smooth edges of screen fonts",
+            SpiFlag::MinimizeAnimation => "Animate windows when minimising and maximising",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisplayInfo {
+    /// e.g. `\\.\DISPLAY1`
+    pub device: String,
+    pub monitor: String,
+    pub width: u32,
+    pub height: u32,
+    pub hz: u32,
+    /// Highest refresh rate offered at the current resolution.
+    pub max_hz: u32,
+}
+
+pub trait Desktop: Send + Sync {
+    fn spi_get(&self, flag: SpiFlag) -> SysResult<bool>;
+    fn spi_set(&self, flag: SpiFlag, value: bool) -> SysResult<()>;
+    /// Applies `HKCU\Control Panel\Mouse` acceleration values to the running session.
+    fn reload_mouse(&self) -> SysResult<()>;
+    /// Applies the Sticky/Toggle/Filter Keys flags from the registry to the running session.
+    fn reload_accessibility(&self) -> SysResult<()>;
+    /// Tells running apps that settings changed (theme, policies).
+    fn broadcast_settings_change(&self) -> SysResult<()>;
+    fn displays(&self) -> SysResult<Vec<DisplayInfo>>;
+    fn set_refresh(&self, device: &str, hz: u32) -> SysResult<()>;
+}
+
+// ---- Network ----------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Adapter {
+    /// `{GUID}` as used under `Tcpip\Parameters\Interfaces`.
+    pub guid: String,
+    pub name: String,
+    pub description: String,
+    pub wired: bool,
+    pub connected: bool,
+}
+
+pub trait Network: Send + Sync {
+    /// Physical Ethernet and Wi-Fi adapters.
+    fn adapters(&self) -> SysResult<Vec<Adapter>>;
+    /// Sets DNS servers; empty lists mean "automatic (DHCP)".
+    fn set_dns(&self, guid: &str, v4: &[String], v6: &[String]) -> SysResult<()>;
+}
+
 // ---- Scheduled tasks --------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +380,8 @@ pub struct SysCtx {
     pub power: Arc<dyn Power>,
     pub tasks: Arc<dyn Tasks>,
     pub apps: Arc<dyn Apps>,
+    pub desktop: Arc<dyn Desktop>,
+    pub network: Arc<dyn Network>,
 }
 
 impl SysCtx {
@@ -311,6 +397,8 @@ impl SysCtx {
                 power: Arc::new(win::power::WinPower),
                 tasks: Arc::new(win::tasks::WinTasks),
                 apps: Arc::new(win::apps::WinApps),
+                desktop: Arc::new(win::desktop::WinDesktop),
+                network: Arc::new(win::network::WinNetwork),
             }
         }
         #[cfg(not(windows))]
@@ -322,7 +410,9 @@ impl SysCtx {
                 restore_points: unsupported.clone(),
                 power: unsupported.clone(),
                 tasks: unsupported.clone(),
-                apps: unsupported,
+                apps: unsupported.clone(),
+                desktop: unsupported.clone(),
+                network: unsupported,
             }
         }
     }
@@ -460,6 +550,39 @@ mod unsupported {
         }
         fn restore(&self, _: &str) -> SysResult<()> {
             err("restore app")
+        }
+    }
+
+    impl Desktop for Unsupported {
+        fn spi_get(&self, _: SpiFlag) -> SysResult<bool> {
+            err("read desktop setting")
+        }
+        fn spi_set(&self, _: SpiFlag, _: bool) -> SysResult<()> {
+            err("change desktop setting")
+        }
+        fn reload_mouse(&self) -> SysResult<()> {
+            Ok(())
+        }
+        fn reload_accessibility(&self) -> SysResult<()> {
+            Ok(())
+        }
+        fn broadcast_settings_change(&self) -> SysResult<()> {
+            Ok(())
+        }
+        fn displays(&self) -> SysResult<Vec<DisplayInfo>> {
+            Ok(Vec::new())
+        }
+        fn set_refresh(&self, _: &str, _: u32) -> SysResult<()> {
+            err("change refresh rate")
+        }
+    }
+
+    impl Network for Unsupported {
+        fn adapters(&self) -> SysResult<Vec<Adapter>> {
+            Ok(Vec::new())
+        }
+        fn set_dns(&self, _: &str, _: &[String], _: &[String]) -> SysResult<()> {
+            err("change DNS")
         }
     }
 }

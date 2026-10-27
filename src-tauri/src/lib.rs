@@ -1,13 +1,17 @@
+pub mod actions;
 pub mod backup;
 pub mod commands;
 pub mod debloat;
 pub mod error;
+pub mod games;
 pub mod guard;
 pub mod hw;
+pub mod insights;
 pub mod log;
 pub mod paths;
 pub mod platform;
 pub mod power;
+pub mod storage;
 pub mod sys;
 pub mod timer;
 pub mod tweaks;
@@ -101,6 +105,19 @@ pub fn run() {
             commands::debloat::debloat_background,
             commands::debloat::debloat_apply_background,
             commands::debloat::debloat_restore_background,
+            commands::extras::games_list,
+            commands::extras::game_set_priority,
+            commands::extras::game_set_fso,
+            commands::extras::minecraft_jvm,
+            commands::extras::dns_status,
+            commands::extras::dns_set,
+            commands::extras::updates_pause_status,
+            commands::extras::updates_pause,
+            commands::extras::updates_resume,
+            commands::extras::storage_scan,
+            commands::extras::storage_clean,
+            commands::extras::insights_run,
+            commands::extras::insights_fix,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

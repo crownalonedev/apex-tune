@@ -9,8 +9,12 @@ pub mod atom;
 pub mod engine;
 pub mod error;
 pub mod gaming;
+pub mod input;
+pub mod network;
 pub mod preset;
 pub mod privacy;
+pub mod system;
+pub mod visual;
 
 use serde::Serialize;
 
@@ -154,12 +158,28 @@ pub trait Tweak: Send + Sync {
     fn revert(&self, txn: &mut Txn<'_>) -> Result<(), TweakError> {
         txn.restore_applied()
     }
+
+    /// Runs after a successful apply or revert, e.g. to make Windows pick up
+    /// a registry change without signing out. Failures are logged, not fatal.
+    fn after_change(&self, _ctx: &SysCtx) -> SysResult<()> {
+        Ok(())
+    }
+}
+
+/// What Windows needs to hear after a registry change to apply it now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refresh {
+    Nothing,
+    Mouse,
+    Accessibility,
+    Broadcast,
 }
 
 /// A tweak whose atoms are fixed.
 pub struct StaticTweak {
     pub meta: TweakMeta,
     pub atoms: fn() -> Vec<Atom>,
+    pub refresh: Refresh,
 }
 
 impl Tweak for StaticTweak {
@@ -170,26 +190,60 @@ impl Tweak for StaticTweak {
     fn atoms(&self, _ctx: &SysCtx) -> SysResult<Vec<Atom>> {
         Ok((self.atoms)())
     }
+
+    fn after_change(&self, ctx: &SysCtx) -> SysResult<()> {
+        match self.refresh {
+            Refresh::Nothing => Ok(()),
+            Refresh::Mouse => ctx.desktop.reload_mouse(),
+            Refresh::Accessibility => ctx.desktop.reload_accessibility(),
+            Refresh::Broadcast => ctx.desktop.broadcast_settings_change(),
+        }
+    }
 }
 
 /// Every tweak Apex Tune offers, in display order.
 pub fn catalog() -> Vec<std::sync::Arc<dyn Tweak>> {
+    use std::sync::Arc;
     vec![
-        std::sync::Arc::new(gaming::game_mode()),
-        std::sync::Arc::new(gaming::game_dvr_off()),
-        std::sync::Arc::new(crate::power::GamingPlan::new()),
-        std::sync::Arc::new(crate::timer::GlobalTimerRequests::new()),
-        std::sync::Arc::new(privacy::start_suggestions_off()),
-        std::sync::Arc::new(privacy::tips_off()),
-        std::sync::Arc::new(privacy::lockscreen_ads_off()),
-        std::sync::Arc::new(privacy::explorer_ads_off()),
-        std::sync::Arc::new(privacy::ad_id_off()),
-        std::sync::Arc::new(privacy::widgets_off()),
-        std::sync::Arc::new(privacy::edge_background_off()),
-        std::sync::Arc::new(privacy::background_apps_off()),
-        std::sync::Arc::new(privacy::web_search_off()),
-        std::sync::Arc::new(privacy::telemetry_required()),
-        std::sync::Arc::new(privacy::recall_off()),
+        // Gaming
+        Arc::new(gaming::game_mode()),
+        Arc::new(gaming::game_dvr_off()),
+        Arc::new(gaming::WindowedGames::new()),
+        Arc::new(gaming::game_bar_controller_off()),
+        Arc::new(gaming::hags()),
+        Arc::new(gaming::mmcss_responsiveness()),
+        Arc::new(gaming::mmcss_games_task()),
+        // Power and timer
+        Arc::new(crate::power::GamingPlan::new()),
+        Arc::new(crate::timer::GlobalTimerRequests::new()),
+        // Input
+        Arc::new(input::mouse_accel_off()),
+        Arc::new(input::sticky_keys_shortcut_off()),
+        // Network
+        Arc::new(network::network_throttling_off()),
+        Arc::new(network::EthernetPowerSaving::new()),
+        Arc::new(network::TcpAckFrequency::new()),
+        // Visual
+        Arc::new(visual::transparency_off()),
+        Arc::new(visual::animations_off()),
+        Arc::new(visual::best_performance_visuals()),
+        // Suggestions and privacy
+        Arc::new(privacy::start_suggestions_off()),
+        Arc::new(privacy::tips_off()),
+        Arc::new(privacy::lockscreen_ads_off()),
+        Arc::new(privacy::explorer_ads_off()),
+        Arc::new(privacy::ad_id_off()),
+        Arc::new(privacy::widgets_off()),
+        Arc::new(privacy::edge_background_off()),
+        Arc::new(privacy::background_apps_off()),
+        Arc::new(privacy::web_search_off()),
+        Arc::new(privacy::telemetry_required()),
+        Arc::new(privacy::recall_off()),
+        // Updates and system
+        Arc::new(system::drivers_from_windows_update_off()),
+        Arc::new(system::delivery_optimization_local()),
+        Arc::new(system::DeferFeatureUpdates::new()),
+        Arc::new(system::fast_startup_off()),
     ]
 }
 
@@ -214,6 +268,7 @@ pub(crate) mod test_support {
 
     pub fn two_values() -> StaticTweak {
         StaticTweak {
+            refresh: crate::tweaks::Refresh::Nothing,
             meta: meta("two_values"),
             atoms: || {
                 vec![
@@ -221,6 +276,42 @@ pub(crate) mod test_support {
                     Atom::reg_dword(Hive::CurrentUser, PATH, "B", 1),
                 ]
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+    use crate::sys::fake::FakeSystem;
+
+    #[test]
+    fn ids_are_unique_and_every_atom_passes_the_guard() {
+        let sys = FakeSystem::new();
+        let tweaks = catalog();
+        let mut ids: Vec<&str> = tweaks.iter().map(|t| t.id()).collect();
+        ids.sort_unstable();
+        let before = ids.len();
+        ids.dedup();
+        assert_eq!(before, ids.len(), "duplicate tweak id");
+        for t in &tweaks {
+            for atom in t.atoms(&sys.ctx).unwrap() {
+                crate::guard::check_atom(&atom).unwrap_or_else(|e| panic!("{}: {e}", t.id()));
+            }
+        }
+    }
+
+    #[test]
+    fn the_preset_is_safe_only() {
+        for t in catalog() {
+            if t.meta().recommended {
+                assert_eq!(
+                    t.risk(),
+                    Risk::Safe,
+                    "{} is in the preset but not Safe",
+                    t.id()
+                );
+            }
         }
     }
 }

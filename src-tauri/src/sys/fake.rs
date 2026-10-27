@@ -635,6 +635,114 @@ impl Apps for FakeApps {
     }
 }
 
+// ---- Desktop ----------------------------------------------------------------
+
+#[derive(Default)]
+pub struct FakeDesktop {
+    pub flags: Mutex<HashMap<String, bool>>,
+    pub displays: Mutex<Vec<DisplayInfo>>,
+    pub reloads: Mutex<u32>,
+}
+
+impl FakeDesktop {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+}
+
+impl Desktop for FakeDesktop {
+    fn spi_get(&self, flag: SpiFlag) -> SysResult<bool> {
+        Ok(*lock(&self.flags).get(&format!("{flag:?}")).unwrap_or(&true))
+    }
+
+    fn spi_set(&self, flag: SpiFlag, value: bool) -> SysResult<()> {
+        lock(&self.flags).insert(format!("{flag:?}"), value);
+        Ok(())
+    }
+
+    fn reload_mouse(&self) -> SysResult<()> {
+        *lock(&self.reloads) += 1;
+        Ok(())
+    }
+
+    fn reload_accessibility(&self) -> SysResult<()> {
+        *lock(&self.reloads) += 1;
+        Ok(())
+    }
+
+    fn broadcast_settings_change(&self) -> SysResult<()> {
+        Ok(())
+    }
+
+    fn displays(&self) -> SysResult<Vec<DisplayInfo>> {
+        Ok(lock(&self.displays).clone())
+    }
+
+    fn set_refresh(&self, device: &str, hz: u32) -> SysResult<()> {
+        let mut displays = lock(&self.displays);
+        let d = displays
+            .iter_mut()
+            .find(|d| d.device == device)
+            .ok_or_else(|| {
+                SysError::new(
+                    SysErrorKind::NotFound,
+                    "change refresh rate",
+                    device,
+                    "No such display.",
+                )
+            })?;
+        if hz > d.max_hz {
+            return Err(SysError::new(
+                SysErrorKind::Other,
+                "change refresh rate",
+                device,
+                "Mode not supported.",
+            ));
+        }
+        d.hz = hz;
+        Ok(())
+    }
+}
+
+// ---- Network ----------------------------------------------------------------
+
+#[derive(Default)]
+pub struct FakeNetwork {
+    pub adapters: Mutex<Vec<Adapter>>,
+    /// Mirrors what Windows writes, so atoms can read DNS back from the registry.
+    pub registry: Mutex<Option<Arc<FakeRegistry>>>,
+}
+
+impl FakeNetwork {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+}
+
+impl Network for FakeNetwork {
+    fn adapters(&self) -> SysResult<Vec<Adapter>> {
+        Ok(lock(&self.adapters).clone())
+    }
+
+    fn set_dns(&self, guid: &str, v4: &[String], v6: &[String]) -> SysResult<()> {
+        if let Some(reg) = lock(&self.registry).as_ref() {
+            reg.seed(
+                Hive::LocalMachine,
+                &format!(r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{guid}"),
+                "NameServer",
+                RegData::Sz(v4.join(",")),
+            );
+            reg.seed(
+                Hive::LocalMachine,
+                &format!(r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\{guid}"),
+                "NameServer",
+                RegData::Sz(v6.join(",")),
+            );
+        }
+        Ok(())
+    }
+}
+
 /// A full fake system plus typed handles to each fake for assertions.
 pub struct FakeSystem {
     pub ctx: SysCtx,
@@ -644,6 +752,8 @@ pub struct FakeSystem {
     pub power: Arc<FakePower>,
     pub tasks: Arc<FakeTasks>,
     pub apps: Arc<FakeApps>,
+    pub desktop: Arc<FakeDesktop>,
+    pub network: Arc<FakeNetwork>,
 }
 
 impl FakeSystem {
@@ -654,6 +764,9 @@ impl FakeSystem {
         let power = FakePower::new();
         let tasks = FakeTasks::new();
         let apps = FakeApps::new();
+        let desktop = FakeDesktop::new();
+        let network = FakeNetwork::new();
+        *lock(&network.registry) = Some(registry.clone());
         let ctx = SysCtx {
             registry: registry.clone(),
             services: services.clone(),
@@ -661,6 +774,8 @@ impl FakeSystem {
             power: power.clone(),
             tasks: tasks.clone(),
             apps: apps.clone(),
+            desktop: desktop.clone(),
+            network: network.clone(),
         };
         Self {
             ctx,
@@ -670,6 +785,8 @@ impl FakeSystem {
             power,
             tasks,
             apps,
+            desktop,
+            network,
         }
     }
 }

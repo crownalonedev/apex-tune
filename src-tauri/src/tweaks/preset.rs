@@ -241,6 +241,7 @@ mod tests {
 
     fn engine_with(sys: &FakeSystem, dir: &std::path::Path) -> Engine {
         let failing = StaticTweak {
+            refresh: crate::tweaks::Refresh::Nothing,
             meta: meta("failing"),
             atoms: || {
                 vec![Atom::reg_dword(

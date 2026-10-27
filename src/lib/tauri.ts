@@ -276,6 +276,69 @@ export interface ItemResult {
   error: string | null;
 }
 
+export interface Game {
+  name: string;
+  exe: string;
+  path: string | null;
+  source: "known" | "steam" | "epic";
+  note: string | null;
+  highPriority: boolean;
+  fsoDisabled: boolean;
+}
+
+export type Collector = "g1" | "zgc";
+
+export interface JvmAdvice {
+  memoryGb: number;
+  arguments: string;
+  notes: string[];
+}
+
+export type DnsPreset = "automatic" | "cloudflare" | "google" | "quad9";
+
+export interface AdapterDns {
+  guid: string;
+  name: string;
+  description: string;
+  wired: boolean;
+  connected: boolean;
+  servers: string[];
+  preset: DnsPreset | null;
+}
+
+export interface PauseStatus {
+  until: string | null;
+  ours: boolean;
+}
+
+export type CleanTarget = "userTemp" | "windowsTemp" | "updateCache" | "deliveryOptimization" | "shaderCache" | "errorReports";
+
+export interface CleanTargetInfo {
+  target: CleanTarget;
+  name: string;
+  description: string;
+  warning: string | null;
+  bytes: number;
+  files: number;
+}
+
+export interface CleanReport {
+  freedBytes: number;
+  deletedFiles: number;
+  skippedFiles: number;
+}
+
+export type FindingLevel = "good" | "info" | "warn";
+export type Fix = { kind: "refreshRate"; device: string; hz: number };
+
+export interface Finding {
+  id: string;
+  title: string;
+  detail: string;
+  level: FindingLevel;
+  fix: Fix | null;
+}
+
 export const APEX_PLAN_TWEAK = "power_plan";
 export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
@@ -418,6 +481,26 @@ const previewBackground: Background = {
   changed: [],
 };
 
+const previewGames: Game[] = [
+  { name: "VALORANT", exe: "VALORANT-Win64-Shipping.exe", path: null, source: "known", note: "Uses NVIDIA Reflex: turn on Reflex + Boost in its video settings.", highPriority: false, fsoDisabled: false },
+  { name: "Minecraft: Java Edition", exe: "javaw.exe", path: null, source: "known", note: "javaw.exe is shared by every Java app.", highPriority: false, fsoDisabled: false },
+  { name: "Counter-Strike 2", exe: "cs2.exe", path: "D:\\SteamLibrary\\steamapps\\common\\Counter-Strike Global Offensive\\game\\bin\\win64\\cs2.exe", source: "steam", note: null, highPriority: false, fsoDisabled: false },
+];
+
+const previewDns: AdapterDns[] = [
+  { guid: "{PREVIEW}", name: "Ethernet", description: "Preview adapter", wired: true, connected: true, servers: [], preset: "automatic" },
+];
+
+const previewStorage: CleanTargetInfo[] = [
+  { target: "userTemp", name: "Your temporary files", description: "Leftovers from installers and apps.", warning: null, bytes: 1.4 * GB, files: 3120 },
+  { target: "shaderCache", name: "GPU shader caches", description: "Compiled shaders from NVIDIA, AMD and DirectX.", warning: "Games stutter for the first few minutes while shaders are rebuilt.", bytes: 2.1 * GB, files: 812 },
+];
+
+const previewFindings: Finding[] = [
+  { id: "refresh", title: "Preview monitor runs at 60 Hz but supports 165 Hz", detail: "Windows often leaves high-refresh monitors at 60 Hz.", level: "warn", fix: { kind: "refreshRate", device: "\\\\.\\DISPLAY1", hz: 165 } },
+  { id: "secure_boot", title: "Secure Boot is on", detail: "Riot Vanguard needs it on Windows 11.", level: "good", fix: null },
+];
+
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
 
@@ -552,6 +635,64 @@ export const api = {
 
   debloatRestoreBackground(key: string): Promise<void> {
     return inTauri() ? call<void>("debloat_restore_background", { key }) : notInPreview();
+  },
+
+  gamesList(): Promise<Game[]> {
+    return inTauri() ? call<Game[]>("games_list") : Promise.resolve(previewGames);
+  },
+
+  gameSetPriority(exe: string, on: boolean): Promise<void> {
+    return inTauri() ? call<void>("game_set_priority", { exe, on }) : notInPreview();
+  },
+
+  gameSetFso(path: string, on: boolean): Promise<void> {
+    return inTauri() ? call<void>("game_set_fso", { path, on }) : notInPreview();
+  },
+
+  minecraftJvm(modded: boolean, collector: Collector): Promise<JvmAdvice> {
+    return inTauri()
+      ? call<JvmAdvice>("minecraft_jvm", { modded, collector })
+      : Promise.resolve({
+          memoryGb: modded ? 8 : 4,
+          arguments: `-Xms${modded ? 8 : 4}G -Xmx${modded ? 8 : 4}G ${collector === "zgc" ? "-XX:+UseZGC -XX:+ZGenerational" : "-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200"}`,
+          notes: ["Preview values."],
+        });
+  },
+
+  dnsStatus(): Promise<AdapterDns[]> {
+    return inTauri() ? call<AdapterDns[]>("dns_status") : Promise.resolve(previewDns);
+  },
+
+  dnsSet(guid: string | null, preset: DnsPreset): Promise<AdapterDns[]> {
+    return inTauri() ? call<AdapterDns[]>("dns_set", { guid, preset }) : notInPreview();
+  },
+
+  updatesPauseStatus(): Promise<PauseStatus> {
+    return inTauri() ? call<PauseStatus>("updates_pause_status") : Promise.resolve({ until: null, ours: false });
+  },
+
+  updatesPause(weeks: number): Promise<PauseStatus> {
+    return inTauri() ? call<PauseStatus>("updates_pause", { weeks }) : notInPreview();
+  },
+
+  updatesResume(): Promise<PauseStatus> {
+    return inTauri() ? call<PauseStatus>("updates_resume") : notInPreview();
+  },
+
+  storageScan(): Promise<CleanTargetInfo[]> {
+    return inTauri() ? call<CleanTargetInfo[]>("storage_scan") : Promise.resolve(previewStorage);
+  },
+
+  storageClean(target: CleanTarget): Promise<CleanReport> {
+    return inTauri() ? call<CleanReport>("storage_clean", { target }) : notInPreview();
+  },
+
+  insightsRun(): Promise<Finding[]> {
+    return inTauri() ? call<Finding[]>("insights_run") : Promise.resolve(previewFindings);
+  },
+
+  insightsFix(fix: Fix): Promise<void> {
+    return inTauri() ? call<void>("insights_fix", { fix }) : notInPreview();
   },
 
   applyPreset(ids: string[]): Promise<BatchReport> {

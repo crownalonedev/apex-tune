@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::sys::task_xml::{self, LogonTask};
 use crate::sys::{
-    Hive, PowerSource, RegData, ServiceState, StartType, SysCtx, SysError, SysErrorKind, SysResult,
+    Hive, PowerSource, RegData, ServiceState, SpiFlag, StartType, SysCtx, SysError, SysErrorKind,
+    SysResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +74,23 @@ pub enum Atom {
         full_name: String,
         display_name: String,
     },
+    /// A desktop setting applied through SystemParametersInfo.
+    Spi {
+        flag: SpiFlag,
+        value: bool,
+    },
+    DisplayRefresh {
+        device: String,
+        monitor: String,
+        hz: u32,
+    },
+    /// DNS servers for one adapter; empty lists mean automatic.
+    Dns {
+        adapter: String,
+        adapter_name: String,
+        v4: Vec<String>,
+        v6: Vec<String>,
+    },
 }
 
 /// How a power setting's raw value reads to a person.
@@ -137,6 +155,16 @@ pub enum Original {
     AppRemoved {
         installed: bool,
     },
+    Spi {
+        value: bool,
+    },
+    DisplayRefresh {
+        hz: u32,
+    },
+    Dns {
+        v4: Vec<String>,
+        v6: Vec<String>,
+    },
 }
 
 /// One line of a change preview.
@@ -200,6 +228,9 @@ impl Atom {
             Atom::LogonTask { path, .. } => format!("Sign-in task {path}"),
             Atom::TaskEnabled { path, .. } => format!("Scheduled task {path}"),
             Atom::AppRemoved { display_name, .. } => format!("App {display_name}"),
+            Atom::Spi { flag, .. } => flag.label().into(),
+            Atom::DisplayRefresh { monitor, .. } => format!("Refresh rate of {monitor}"),
+            Atom::Dns { adapter_name, .. } => format!("DNS servers for {adapter_name}"),
         }
     }
 
@@ -209,6 +240,36 @@ impl Atom {
             .list()?
             .iter()
             .any(|p| p.name.eq_ignore_ascii_case(name)))
+    }
+
+    fn current_hz(ctx: &SysCtx, device: &str) -> SysResult<Option<u32>> {
+        Ok(ctx
+            .desktop
+            .displays()?
+            .into_iter()
+            .find(|d| d.device == device)
+            .map(|d| d.hz))
+    }
+
+    /// DNS servers as Windows stores them: a static list, or empty for automatic.
+    fn current_dns(ctx: &SysCtx, adapter: &str) -> SysResult<(Vec<String>, Vec<String>)> {
+        let read = |stack: &str| -> SysResult<Vec<String>> {
+            let path = format!(
+                r"SYSTEM\CurrentControlSet\Services\{stack}\Parameters\Interfaces\{adapter}"
+            );
+            Ok(
+                match ctx.registry.get(Hive::LocalMachine, &path, "NameServer")? {
+                    Some(RegData::Sz(s)) => s
+                        .split([',', ' '])
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_owned)
+                        .collect(),
+                    _ => Vec::new(),
+                },
+            )
+        };
+        Ok((read("Tcpip")?, read("Tcpip6")?))
     }
 
     fn logon_xml(
@@ -271,6 +332,25 @@ impl Atom {
             Atom::AppRemoved { name, .. } => Ok(Original::AppRemoved {
                 installed: Self::app_installed(ctx, name)?,
             }),
+            Atom::Spi { flag, .. } => Ok(Original::Spi {
+                value: ctx.desktop.spi_get(*flag)?,
+            }),
+            Atom::DisplayRefresh {
+                device, monitor, ..
+            } => Ok(Original::DisplayRefresh {
+                hz: Self::current_hz(ctx, device)?.ok_or_else(|| {
+                    SysError::new(
+                        SysErrorKind::NotFound,
+                        "read refresh rate",
+                        monitor,
+                        "Display not found.",
+                    )
+                })?,
+            }),
+            Atom::Dns { adapter, .. } => {
+                let (v4, v6) = Self::current_dns(ctx, adapter)?;
+                Ok(Original::Dns { v4, v6 })
+            }
         }
     }
 
@@ -358,6 +438,21 @@ impl Atom {
                 }
                 Ok(())
             }
+            Atom::Spi { flag, value } => {
+                if ctx.desktop.spi_get(*flag)? == *value {
+                    return Ok(());
+                }
+                ctx.desktop.spi_set(*flag, *value)
+            }
+            Atom::DisplayRefresh { device, hz, .. } => {
+                if Self::current_hz(ctx, device)? == Some(*hz) {
+                    return Ok(());
+                }
+                ctx.desktop.set_refresh(device, *hz)
+            }
+            Atom::Dns {
+                adapter, v4, v6, ..
+            } => ctx.network.set_dns(adapter, v4, v6),
         }
     }
 
@@ -447,6 +542,24 @@ impl Atom {
                 }
                 Ok(())
             }
+            (Atom::Spi { flag, .. }, Original::Spi { value }) => {
+                if ctx.desktop.spi_get(*flag)? == *value {
+                    return Ok(());
+                }
+                ctx.desktop.spi_set(*flag, *value)
+            }
+            (Atom::DisplayRefresh { device, .. }, Original::DisplayRefresh { hz }) => {
+                if Self::current_hz(ctx, device)? == Some(*hz) {
+                    return Ok(());
+                }
+                ctx.desktop.set_refresh(device, *hz)
+            }
+            (Atom::Dns { adapter, .. }, Original::Dns { v4, v6 }) => {
+                if Self::current_dns(ctx, adapter)? == (v4.clone(), v6.clone()) {
+                    return Ok(());
+                }
+                ctx.network.set_dns(adapter, v4, v6)
+            }
             (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
                 match (enabled, ctx.tasks.get(path)?) {
                     (Some(before), Some((_, now))) if *before != now => {
@@ -511,6 +624,13 @@ impl Atom {
                 Ok(ctx.tasks.get(path)?.is_none_or(|(_, now)| now == *enabled))
             }
             Atom::AppRemoved { name, .. } => Ok(!Self::app_installed(ctx, name)?),
+            Atom::Spi { flag, value } => Ok(ctx.desktop.spi_get(*flag)? == *value),
+            Atom::DisplayRefresh { device, hz, .. } => {
+                Ok(Self::current_hz(ctx, device)? == Some(*hz))
+            }
+            Atom::Dns {
+                adapter, v4, v6, ..
+            } => Ok(Self::current_dns(ctx, adapter)? == (v4.clone(), v6.clone())),
         }
     }
 
@@ -553,6 +673,15 @@ impl Atom {
             }
             (Atom::AppRemoved { name, .. }, Original::AppRemoved { installed }) => {
                 Ok(Self::app_installed(ctx, name)? == *installed)
+            }
+            (Atom::Spi { flag, .. }, Original::Spi { value }) => {
+                Ok(ctx.desktop.spi_get(*flag)? == *value)
+            }
+            (Atom::DisplayRefresh { device, .. }, Original::DisplayRefresh { hz }) => {
+                Ok(Self::current_hz(ctx, device)?.is_none_or(|now| now == *hz))
+            }
+            (Atom::Dns { adapter, .. }, Original::Dns { v4, v6 }) => {
+                Ok(Self::current_dns(ctx, adapter)? == (v4.clone(), v6.clone()))
             }
             (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
                 Ok(match enabled {
@@ -666,6 +795,37 @@ impl Atom {
                 .into(),
                 to: "Removed for your account".into(),
             }),
+            Atom::Spi { flag, value } => Ok(ChangePreview {
+                target,
+                from: if ctx.desktop.spi_get(*flag)? {
+                    "On"
+                } else {
+                    "Off"
+                }
+                .into(),
+                to: if *value { "On" } else { "Off" }.into(),
+            }),
+            Atom::DisplayRefresh { device, hz, .. } => Ok(ChangePreview {
+                target,
+                from: Self::current_hz(ctx, device)?
+                    .map_or("Unknown".into(), |h| format!("{h} Hz")),
+                to: format!("{hz} Hz"),
+            }),
+            Atom::Dns { adapter, v4, .. } => {
+                let (now, _) = Self::current_dns(ctx, adapter)?;
+                let show = |l: &[String]| {
+                    if l.is_empty() {
+                        "Automatic".to_owned()
+                    } else {
+                        l.join(", ")
+                    }
+                };
+                Ok(ChangePreview {
+                    target,
+                    from: show(&now),
+                    to: show(v4),
+                })
+            }
         }
     }
 }
