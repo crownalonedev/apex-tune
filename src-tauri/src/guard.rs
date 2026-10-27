@@ -354,6 +354,12 @@ pub fn check_atom(atom: &Atom) -> Result<(), GuardViolation> {
         Atom::TaskEnabled { path, .. } => check_task(path),
         Atom::AppRemoved { name, .. } => check_app(name),
         Atom::Spi { .. } | Atom::DisplayRefresh { .. } | Atom::Dns { .. } => Ok(()),
+        // Driver settings change how the GPU renders, never the game itself.
+        Atom::NvAppProfile { exe } => check_nv_exe(exe),
+        Atom::NvSetting { profile, .. } => match profile {
+            crate::sys::NvProfile::App { exe } => check_nv_exe(exe),
+            crate::sys::NvProfile::Global => Ok(()),
+        },
     }
 }
 
@@ -419,6 +425,16 @@ fn check_own_task(path: &str, command: &str, highest: bool) -> Result<(), GuardV
         .to_ascii_lowercase();
     if highest && exe != "apex-tune.exe" {
         return deny("only Apex Tune itself may start with administrator rights");
+    }
+    Ok(())
+}
+
+fn check_nv_exe(exe: &str) -> Result<(), GuardViolation> {
+    if ifeo_exe_forbidden(&exe.to_ascii_lowercase()) == Some(ANTI_CHEAT) {
+        return Err(GuardViolation {
+            target: format!("NVIDIA profile for {exe}"),
+            reason: ANTI_CHEAT,
+        });
     }
     Ok(())
 }

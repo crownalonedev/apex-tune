@@ -8,6 +8,7 @@ pub mod guard;
 pub mod hw;
 pub mod insights;
 pub mod log;
+pub mod nvidia;
 pub mod paths;
 pub mod platform;
 pub mod power;
@@ -118,6 +119,10 @@ pub fn run() {
             commands::extras::storage_clean,
             commands::extras::insights_run,
             commands::extras::insights_fix,
+            commands::nvidia::nvidia_status,
+            commands::nvidia::nvidia_set_game,
+            commands::nvidia::nvidia_set_fps,
+            commands::nvidia::nvidia_restore_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

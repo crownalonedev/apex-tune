@@ -100,6 +100,7 @@ export interface StatsTick {
   ramTotalBytes: number;
   processes: number;
   gpuPercent: number | null;
+  gpuTempC: number | null;
 }
 
 export type Risk = "safe" | "moderate" | "advanced";
@@ -339,6 +340,12 @@ export interface Finding {
   fix: Fix | null;
 }
 
+export interface NvidiaStatus {
+  info: { gpu: string; driver: string } | null;
+  games: { name: string; exe: string; reflex: boolean; applied: boolean; fpsCap: number | null }[];
+  hasBackup: boolean;
+}
+
 export const APEX_PLAN_TWEAK = "power_plan";
 export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
@@ -500,6 +507,15 @@ const previewFindings: Finding[] = [
   { id: "refresh", title: "Preview monitor runs at 60 Hz but supports 165 Hz", detail: "Windows often leaves high-refresh monitors at 60 Hz.", level: "warn", fix: { kind: "refreshRate", device: "\\\\.\\DISPLAY1", hz: 165 } },
   { id: "secure_boot", title: "Secure Boot is on", detail: "Riot Vanguard needs it on Windows 11.", level: "good", fix: null },
 ];
+
+const previewNvidia: NvidiaStatus = {
+  info: { gpu: "Preview NVIDIA GPU", driver: "560.94" },
+  games: [
+    { name: "VALORANT", exe: "VALORANT-Win64-Shipping.exe", reflex: true, applied: false, fpsCap: null },
+    { name: "Minecraft: Java Edition", exe: "javaw.exe", reflex: false, applied: false, fpsCap: null },
+  ],
+  hasBackup: false,
+};
 
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
@@ -695,6 +711,22 @@ export const api = {
     return inTauri() ? call<void>("insights_fix", { fix }) : notInPreview();
   },
 
+  nvidiaStatus(): Promise<NvidiaStatus> {
+    return inTauri() ? call<NvidiaStatus>("nvidia_status") : Promise.resolve(previewNvidia);
+  },
+
+  nvidiaSetGame(exe: string, on: boolean): Promise<NvidiaStatus> {
+    return inTauri() ? call<NvidiaStatus>("nvidia_set_game", { exe, on }) : notInPreview();
+  },
+
+  nvidiaSetFps(exe: string, fps: number): Promise<NvidiaStatus> {
+    return inTauri() ? call<NvidiaStatus>("nvidia_set_fps", { exe, fps }) : notInPreview();
+  },
+
+  nvidiaRestoreBackup(): Promise<void> {
+    return inTauri() ? call<void>("nvidia_restore_backup") : notInPreview();
+  },
+
   applyPreset(ids: string[]): Promise<BatchReport> {
     return inTauri() ? call<BatchReport>("apply_preset", { ids }) : notInPreview();
   },
@@ -715,6 +747,7 @@ export async function onStats(handler: (tick: StatsTick) => void): Promise<Unlis
       ramTotalBytes: 32 * GB,
       processes: 212,
       gpuPercent: 40 + 25 * Math.sin(t / 7) + Math.random() * 8,
+      gpuTempC: Math.round(58 + 6 * Math.sin(t / 11)),
     });
   }, 1000);
   return () => clearInterval(timer);

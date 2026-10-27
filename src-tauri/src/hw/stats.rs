@@ -26,6 +26,8 @@ pub struct StatsTick {
     pub processes: usize,
     /// 3D engine load of the busiest GPU; `None` if Windows doesn't report it.
     pub gpu_percent: Option<f32>,
+    /// From NVAPI on NVIDIA GPUs.
+    pub gpu_temp_c: Option<i32>,
 }
 
 type Sink = Arc<dyn Fn(StatsTick) + Send + Sync>;
@@ -71,6 +73,17 @@ impl Sampler {
     }
 }
 
+#[cfg(windows)]
+fn temperature() -> Option<i32> {
+    use crate::sys::Nvidia;
+    crate::sys::win::nvapi::WinNvidia.gpu_temperature()
+}
+
+#[cfg(not(windows))]
+fn temperature() -> Option<i32> {
+    None
+}
+
 fn run(keep_going: &dyn Fn() -> bool, sink: &Sink) {
     let mut system = System::new();
     let mut gpu = GpuCounter::new();
@@ -104,6 +117,7 @@ fn run(keep_going: &dyn Fn() -> bool, sink: &Sink) {
             ram_total_bytes: system.total_memory(),
             processes,
             gpu_percent: gpu.as_mut().and_then(GpuCounter::sample),
+            gpu_temp_c: temperature(),
         });
         tracing::trace!("stats tick took {:?}", started.elapsed());
     }

@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::sys::task_xml::{self, LogonTask};
 use crate::sys::{
-    Hive, PowerSource, RegData, ServiceState, SpiFlag, StartType, SysCtx, SysError, SysErrorKind,
-    SysResult,
+    Hive, NvProfile, PowerSource, RegData, ServiceState, SpiFlag, StartType, SysCtx, SysError,
+    SysErrorKind, SysResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,6 +91,18 @@ pub enum Atom {
         v4: Vec<String>,
         v6: Vec<String>,
     },
+    /// An NVIDIA driver profile for a program that had none.
+    NvAppProfile {
+        exe: String,
+    },
+    /// One NVIDIA driver setting in a profile.
+    NvSetting {
+        profile: NvProfile,
+        setting: u32,
+        label: String,
+        value: u32,
+        value_label: String,
+    },
 }
 
 /// How a power setting's raw value reads to a person.
@@ -165,6 +177,13 @@ pub enum Original {
         v4: Vec<String>,
         v6: Vec<String>,
     },
+    NvAppProfile {
+        existed: bool,
+    },
+    NvSetting {
+        /// `None` means the profile inherited the default.
+        value: Option<u32>,
+    },
 }
 
 /// One line of a change preview.
@@ -231,6 +250,11 @@ impl Atom {
             Atom::Spi { flag, .. } => flag.label().into(),
             Atom::DisplayRefresh { monitor, .. } => format!("Refresh rate of {monitor}"),
             Atom::Dns { adapter_name, .. } => format!("DNS servers for {adapter_name}"),
+            Atom::NvAppProfile { exe } => format!("NVIDIA profile for {exe}"),
+            Atom::NvSetting { profile, label, .. } => match profile {
+                NvProfile::Global => format!("NVIDIA global: {label}"),
+                NvProfile::App { exe } => format!("NVIDIA {exe}: {label}"),
+            },
         }
     }
 
@@ -240,6 +264,16 @@ impl Atom {
             .list()?
             .iter()
             .any(|p| p.name.eq_ignore_ascii_case(name)))
+    }
+
+    /// A setting's own value, treating "the app has no profile yet" as unset.
+    fn nv_get(ctx: &SysCtx, profile: &NvProfile, setting: u32) -> SysResult<Option<u32>> {
+        if let NvProfile::App { exe } = profile
+            && !ctx.nvidia.app_profile_exists(exe)?
+        {
+            return Ok(None);
+        }
+        ctx.nvidia.get(profile, setting)
     }
 
     fn current_hz(ctx: &SysCtx, device: &str) -> SysResult<Option<u32>> {
@@ -351,6 +385,14 @@ impl Atom {
                 let (v4, v6) = Self::current_dns(ctx, adapter)?;
                 Ok(Original::Dns { v4, v6 })
             }
+            Atom::NvAppProfile { exe } => Ok(Original::NvAppProfile {
+                existed: ctx.nvidia.app_profile_exists(exe)?,
+            }),
+            Atom::NvSetting {
+                profile, setting, ..
+            } => Ok(Original::NvSetting {
+                value: Self::nv_get(ctx, profile, *setting)?,
+            }),
         }
     }
 
@@ -453,6 +495,18 @@ impl Atom {
             Atom::Dns {
                 adapter, v4, v6, ..
             } => ctx.network.set_dns(adapter, v4, v6),
+            Atom::NvAppProfile { exe } => {
+                if ctx.nvidia.app_profile_exists(exe)? {
+                    return Ok(());
+                }
+                ctx.nvidia.create_app_profile(exe)
+            }
+            Atom::NvSetting {
+                profile,
+                setting,
+                value,
+                ..
+            } => ctx.nvidia.set(profile, *setting, *value),
         }
     }
 
@@ -560,6 +614,26 @@ impl Atom {
                 }
                 ctx.network.set_dns(adapter, v4, v6)
             }
+            (Atom::NvAppProfile { exe }, Original::NvAppProfile { existed }) => {
+                if !existed {
+                    ctx.nvidia.delete_app_profile(exe)?;
+                }
+                Ok(())
+            }
+            (
+                Atom::NvSetting {
+                    profile, setting, ..
+                },
+                Original::NvSetting { value },
+            ) => {
+                if Self::nv_get(ctx, profile, *setting)? == *value {
+                    return Ok(());
+                }
+                match value {
+                    Some(v) => ctx.nvidia.set(profile, *setting, *v),
+                    None => ctx.nvidia.clear(profile, *setting),
+                }
+            }
             (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
                 match (enabled, ctx.tasks.get(path)?) {
                     (Some(before), Some((_, now))) if *before != now => {
@@ -631,6 +705,13 @@ impl Atom {
             Atom::Dns {
                 adapter, v4, v6, ..
             } => Ok(Self::current_dns(ctx, adapter)? == (v4.clone(), v6.clone())),
+            Atom::NvAppProfile { exe } => ctx.nvidia.app_profile_exists(exe),
+            Atom::NvSetting {
+                profile,
+                setting,
+                value,
+                ..
+            } => Ok(Self::nv_get(ctx, profile, *setting)? == Some(*value)),
         }
     }
 
@@ -683,6 +764,15 @@ impl Atom {
             (Atom::Dns { adapter, .. }, Original::Dns { v4, v6 }) => {
                 Ok(Self::current_dns(ctx, adapter)? == (v4.clone(), v6.clone()))
             }
+            (Atom::NvAppProfile { exe }, Original::NvAppProfile { existed }) => {
+                Ok(ctx.nvidia.app_profile_exists(exe)? == *existed)
+            }
+            (
+                Atom::NvSetting {
+                    profile, setting, ..
+                },
+                Original::NvSetting { value },
+            ) => Ok(Self::nv_get(ctx, profile, *setting)? == *value),
             (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
                 Ok(match enabled {
                     None => true,
@@ -826,6 +916,27 @@ impl Atom {
                     to: show(v4),
                 })
             }
+            Atom::NvAppProfile { exe } => Ok(ChangePreview {
+                target,
+                from: if ctx.nvidia.app_profile_exists(exe)? {
+                    "Exists"
+                } else {
+                    "None"
+                }
+                .into(),
+                to: "Profile for this program".into(),
+            }),
+            Atom::NvSetting {
+                profile,
+                setting,
+                value_label,
+                ..
+            } => Ok(ChangePreview {
+                target,
+                from: Self::nv_get(ctx, profile, *setting)?
+                    .map_or("Driver default".into(), |v| format!("0x{v:X}")),
+                to: value_label.clone(),
+            }),
         }
     }
 }

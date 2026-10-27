@@ -3,6 +3,7 @@
 pub mod apps;
 pub mod desktop;
 pub mod network;
+pub mod nvapi;
 pub mod power;
 pub mod registry;
 pub mod restore;

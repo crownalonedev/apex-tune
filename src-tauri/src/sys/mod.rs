@@ -345,6 +345,48 @@ pub trait Network: Send + Sync {
     fn set_dns(&self, guid: &str, v4: &[String], v6: &[String]) -> SysResult<()>;
 }
 
+// ---- NVIDIA driver settings (NVAPI DRS) ----------------------------------------
+
+/// Which driver profile a setting lives in.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum NvProfile {
+    /// The global (base) profile every game inherits from.
+    Global,
+    /// The profile the driver uses for this executable.
+    App { exe: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NvInfo {
+    pub gpu: String,
+    /// e.g. "560.94"
+    pub driver: String,
+}
+
+pub trait Nvidia: Send + Sync {
+    /// `Ok(None)` when there's no NVIDIA GPU or driver.
+    fn info(&self) -> SysResult<Option<NvInfo>>;
+    /// The value set directly in this profile, or `None` if it inherits the default.
+    fn get(&self, profile: &NvProfile, setting: u32) -> SysResult<Option<u32>>;
+    fn set(&self, profile: &NvProfile, setting: u32, value: u32) -> SysResult<()>;
+    /// Removes the profile's own value so it inherits the default again.
+    fn clear(&self, profile: &NvProfile, setting: u32) -> SysResult<()>;
+    /// Whether the driver has a profile for this executable.
+    fn app_profile_exists(&self, exe: &str) -> SysResult<bool>;
+    /// Creates an Apex Tune profile containing just this executable.
+    fn create_app_profile(&self, exe: &str) -> SysResult<()>;
+    /// Deletes the profile Apex Tune created for this executable.
+    fn delete_app_profile(&self, exe: &str) -> SysResult<()>;
+    /// Writes the whole driver settings database to a file.
+    fn export(&self, path: &std::path::Path) -> SysResult<()>;
+    /// Replaces the driver settings database from an exported file.
+    fn import(&self, path: &std::path::Path) -> SysResult<()>;
+    /// Hottest GPU sensor, in °C.
+    fn gpu_temperature(&self) -> Option<i32>;
+}
+
 // ---- Scheduled tasks --------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -382,6 +424,7 @@ pub struct SysCtx {
     pub apps: Arc<dyn Apps>,
     pub desktop: Arc<dyn Desktop>,
     pub network: Arc<dyn Network>,
+    pub nvidia: Arc<dyn Nvidia>,
 }
 
 impl SysCtx {
@@ -399,6 +442,7 @@ impl SysCtx {
                 apps: Arc::new(win::apps::WinApps),
                 desktop: Arc::new(win::desktop::WinDesktop),
                 network: Arc::new(win::network::WinNetwork),
+                nvidia: Arc::new(win::nvapi::WinNvidia),
             }
         }
         #[cfg(not(windows))]
@@ -412,7 +456,8 @@ impl SysCtx {
                 tasks: unsupported.clone(),
                 apps: unsupported.clone(),
                 desktop: unsupported.clone(),
-                network: unsupported,
+                network: unsupported.clone(),
+                nvidia: unsupported,
             }
         }
     }
@@ -583,6 +628,39 @@ mod unsupported {
         }
         fn set_dns(&self, _: &str, _: &[String], _: &[String]) -> SysResult<()> {
             err("change DNS")
+        }
+    }
+
+    impl Nvidia for Unsupported {
+        fn info(&self) -> SysResult<Option<NvInfo>> {
+            Ok(None)
+        }
+        fn get(&self, _: &NvProfile, _: u32) -> SysResult<Option<u32>> {
+            err("read NVIDIA setting")
+        }
+        fn set(&self, _: &NvProfile, _: u32, _: u32) -> SysResult<()> {
+            err("change NVIDIA setting")
+        }
+        fn clear(&self, _: &NvProfile, _: u32) -> SysResult<()> {
+            err("change NVIDIA setting")
+        }
+        fn app_profile_exists(&self, _: &str) -> SysResult<bool> {
+            err("read NVIDIA profile")
+        }
+        fn create_app_profile(&self, _: &str) -> SysResult<()> {
+            err("create NVIDIA profile")
+        }
+        fn delete_app_profile(&self, _: &str) -> SysResult<()> {
+            err("delete NVIDIA profile")
+        }
+        fn export(&self, _: &std::path::Path) -> SysResult<()> {
+            err("back up NVIDIA settings")
+        }
+        fn import(&self, _: &std::path::Path) -> SysResult<()> {
+            err("restore NVIDIA settings")
+        }
+        fn gpu_temperature(&self) -> Option<i32> {
+            None
         }
     }
 }

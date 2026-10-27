@@ -216,6 +216,8 @@ pub fn catalog() -> Vec<std::sync::Arc<dyn Tweak>> {
         // Power and timer
         Arc::new(crate::power::GamingPlan::new()),
         Arc::new(crate::timer::GlobalTimerRequests::new()),
+        // NVIDIA
+        Arc::new(crate::nvidia::GlobalProfile::new()),
         // Input
         Arc::new(input::mouse_accel_off()),
         Arc::new(input::sticky_keys_shortcut_off()),

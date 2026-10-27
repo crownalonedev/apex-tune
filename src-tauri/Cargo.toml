@@ -68,6 +68,7 @@ windows = { version = "0.62", features = [
   "Win32_Security_Authorization",
   "Win32_UI_Accessibility",
   "Win32_UI_WindowsAndMessaging",
+  "Win32_System_LibraryLoader",
   "Win32_System_Performance",
   "Win32_System_Power",
   "Win32_System_RemoteDesktop",

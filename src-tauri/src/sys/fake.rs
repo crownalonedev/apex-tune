@@ -743,6 +743,119 @@ impl Network for FakeNetwork {
     }
 }
 
+// ---- NVIDIA -------------------------------------------------------------------
+
+#[derive(Default)]
+pub struct FakeNvidia {
+    pub present: Mutex<bool>,
+    pub values: Mutex<HashMap<(NvProfile, u32), u32>>,
+    pub app_profiles: Mutex<Vec<String>>,
+    pub exports: Mutex<Vec<std::path::PathBuf>>,
+}
+
+impl FakeNvidia {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    fn need(&self, op: &'static str) -> SysResult<()> {
+        if *lock(&self.present) {
+            Ok(())
+        } else {
+            Err(SysError::new(
+                SysErrorKind::NotFound,
+                op,
+                "NVIDIA",
+                "No NVIDIA GPU.",
+            ))
+        }
+    }
+
+    fn profile_ok(&self, profile: &NvProfile, op: &'static str) -> SysResult<()> {
+        self.need(op)?;
+        if let NvProfile::App { exe } = profile
+            && !lock(&self.app_profiles)
+                .iter()
+                .any(|e| e.eq_ignore_ascii_case(exe))
+        {
+            return Err(SysError::new(
+                SysErrorKind::NotFound,
+                op,
+                exe,
+                "No profile for this program.",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Nvidia for FakeNvidia {
+    fn info(&self) -> SysResult<Option<NvInfo>> {
+        Ok(lock(&self.present).then(|| NvInfo {
+            gpu: "NVIDIA GeForce RTX 4070".into(),
+            driver: "560.94".into(),
+        }))
+    }
+
+    fn get(&self, profile: &NvProfile, setting: u32) -> SysResult<Option<u32>> {
+        self.profile_ok(profile, "read NVIDIA setting")?;
+        Ok(lock(&self.values).get(&(profile.clone(), setting)).copied())
+    }
+
+    fn set(&self, profile: &NvProfile, setting: u32, value: u32) -> SysResult<()> {
+        self.profile_ok(profile, "change NVIDIA setting")?;
+        lock(&self.values).insert((profile.clone(), setting), value);
+        Ok(())
+    }
+
+    fn clear(&self, profile: &NvProfile, setting: u32) -> SysResult<()> {
+        self.profile_ok(profile, "change NVIDIA setting")?;
+        lock(&self.values).remove(&(profile.clone(), setting));
+        Ok(())
+    }
+
+    fn app_profile_exists(&self, exe: &str) -> SysResult<bool> {
+        self.need("read NVIDIA profile")?;
+        Ok(lock(&self.app_profiles)
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(exe)))
+    }
+
+    fn create_app_profile(&self, exe: &str) -> SysResult<()> {
+        self.need("create NVIDIA profile")?;
+        lock(&self.app_profiles).push(exe.into());
+        Ok(())
+    }
+
+    fn delete_app_profile(&self, exe: &str) -> SysResult<()> {
+        lock(&self.app_profiles).retain(|e| !e.eq_ignore_ascii_case(exe));
+        lock(&self.values).retain(|(p, _), _| *p != NvProfile::App { exe: exe.into() });
+        Ok(())
+    }
+
+    fn export(&self, path: &std::path::Path) -> SysResult<()> {
+        self.need("back up NVIDIA settings")?;
+        std::fs::write(path, b"drs").map_err(|e| {
+            SysError::new(
+                SysErrorKind::Other,
+                "back up NVIDIA settings",
+                "",
+                e.to_string(),
+            )
+        })?;
+        lock(&self.exports).push(path.to_owned());
+        Ok(())
+    }
+
+    fn import(&self, _path: &std::path::Path) -> SysResult<()> {
+        self.need("restore NVIDIA settings")
+    }
+
+    fn gpu_temperature(&self) -> Option<i32> {
+        lock(&self.present).then_some(55)
+    }
+}
+
 /// A full fake system plus typed handles to each fake for assertions.
 pub struct FakeSystem {
     pub ctx: SysCtx,
@@ -754,6 +867,7 @@ pub struct FakeSystem {
     pub apps: Arc<FakeApps>,
     pub desktop: Arc<FakeDesktop>,
     pub network: Arc<FakeNetwork>,
+    pub nvidia: Arc<FakeNvidia>,
 }
 
 impl FakeSystem {
@@ -767,6 +881,7 @@ impl FakeSystem {
         let desktop = FakeDesktop::new();
         let network = FakeNetwork::new();
         *lock(&network.registry) = Some(registry.clone());
+        let nvidia = FakeNvidia::new();
         let ctx = SysCtx {
             registry: registry.clone(),
             services: services.clone(),
@@ -776,6 +891,7 @@ impl FakeSystem {
             apps: apps.clone(),
             desktop: desktop.clone(),
             network: network.clone(),
+            nvidia: nvidia.clone(),
         };
         Self {
             ctx,
@@ -787,6 +903,7 @@ impl FakeSystem {
             apps,
             desktop,
             network,
+            nvidia,
         }
     }
 }

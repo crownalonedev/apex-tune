@@ -4,6 +4,7 @@ pub mod app;
 pub mod dashboard;
 pub mod debloat;
 pub mod extras;
+pub mod nvidia;
 pub mod power;
 pub mod safety;
 pub mod timer;

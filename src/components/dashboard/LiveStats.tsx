@@ -36,7 +36,13 @@ export function LiveStats() {
         />
         <Tile
           label="GPU"
-          value={latest ? (latest.gpuPercent === null ? "Not reported" : `${Math.round(latest.gpuPercent)}%`) : undefined}
+          value={
+            latest
+              ? latest.gpuPercent === null
+                ? "Not reported"
+                : `${Math.round(latest.gpuPercent)}%${latest.gpuTempC !== null ? `, ${latest.gpuTempC} °C` : ""}`
+              : undefined
+          }
           data={series((t) => t.gpuPercent)}
           format={(v) => `${Math.round(v)}%`}
         />
@@ -55,8 +61,8 @@ export function LiveStats() {
         />
       </div>
       <p className="mt-2 text-[13px] text-faint">
-        GPU temperature arrives with the NVIDIA stage. CPU temperature isn't shown: Windows only exposes it through
-        a kernel driver, and loading one could trip anti-cheat.
+        GPU temperature comes from the NVIDIA driver. CPU temperature isn't shown: Windows only exposes it through a
+        kernel driver, and loading one could trip anti-cheat.
       </p>
     </section>
   );

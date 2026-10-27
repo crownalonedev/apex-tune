@@ -44,6 +44,11 @@ impl<'a> Txn<'a> {
         self.ctx
     }
 
+    /// The backup session this change belongs to.
+    pub fn session(&self) -> uuid::Uuid {
+        self.entry.session
+    }
+
     /// Writes an atom's target state, after journaling what was there.
     pub fn write(&mut self, atom: Atom) -> Result<(), TweakError> {
         guard::check_atom(&atom)?;
@@ -175,6 +180,13 @@ impl Engine {
 
     pub fn journal(&self) -> &Journal {
         &self.journal
+    }
+
+    /// The current backup session, started if needed.
+    pub fn session_id(&mut self) -> Result<uuid::Uuid, TweakError> {
+        self.journal
+            .ensure_session()
+            .map_err(|e| TweakError::Journal(e.to_string()))
     }
 
     pub fn catalog(&self) -> &[Arc<dyn Tweak>] {
