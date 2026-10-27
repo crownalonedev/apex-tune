@@ -55,6 +55,10 @@ apex-timer = { path = "apex-timer", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
+  "ApplicationModel",
+  "Foundation",
+  "Foundation_Collections",
+  "Management_Deployment",
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Security_Authorization",

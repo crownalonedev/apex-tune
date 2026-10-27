@@ -242,6 +242,17 @@ impl Registry for WinRegistry {
             .map_err(|e| sys_err("list registry keys", format!(r"{hive}\{path}"), &e))?
             .collect())
     }
+
+    fn values(&self, hive: Hive, path: &str) -> SysResult<Vec<(String, RegData)>> {
+        let Some(key) = self.open(hive, path)? else {
+            return Ok(Vec::new());
+        };
+        Ok(key
+            .values()
+            .map_err(|e| sys_err("list registry values", format!(r"{hive}\{path}"), &e))?
+            .map(|(name, value)| (name, to_reg_data(value)))
+            .collect())
+    }
 }
 
 // ---- Who is signed in -----------------------------------------------------

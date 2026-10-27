@@ -223,6 +223,59 @@ export interface BenchReport {
   recommended: number | null;
 }
 
+export type AppGroup = "removable" | "optional" | "keep" | "other";
+
+export interface AppRow {
+  name: string;
+  displayName: string;
+  group: AppGroup;
+  note: string;
+  installed: boolean;
+  restorable: boolean;
+}
+
+export type StartupSource = "userRun" | "machineRun" | "machineRun32" | "userFolder" | "commonFolder" | "task";
+
+export interface StartupItem {
+  id: string;
+  name: string;
+  command: string;
+  source: StartupSource;
+  enabled: boolean;
+  protected: string | null;
+}
+
+export type StartType = "boot" | "system" | "automatic" | "automaticDelayed" | "manual" | "disabled";
+
+export interface TaskRow {
+  path: string;
+  name: string;
+  description: string;
+  enabled: boolean | null;
+}
+
+export interface ServiceRow {
+  name: string;
+  display: string;
+  description: string;
+  current: StartType | null;
+  running: boolean;
+  recommended: StartType;
+  risk: Risk;
+}
+
+export interface Background {
+  tasks: TaskRow[];
+  services: ServiceRow[];
+  changed: string[];
+}
+
+export interface ItemResult {
+  id: string;
+  ok: boolean;
+  error: string | null;
+}
+
 export const APEX_PLAN_TWEAK = "power_plan";
 export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
@@ -330,6 +383,41 @@ const previewTimer: TimerStatus = {
   autostart: false,
 };
 
+const previewApps: AppRow[] = [
+  { name: "Clipchamp.Clipchamp", displayName: "Clipchamp", group: "removable", note: "Video editor.", installed: true, restorable: false },
+  { name: "Microsoft.BingNews", displayName: "News", group: "removable", note: "News app; also feeds Widgets.", installed: true, restorable: false },
+  { name: "Microsoft.YourPhone", displayName: "Phone Link", group: "optional", note: "Keep it if you use your phone with this PC.", installed: true, restorable: false },
+  { name: "Microsoft.GamingServices", displayName: "Gaming Services", group: "keep", note: "Needed by Game Pass and Minecraft.", installed: true, restorable: false },
+];
+
+const previewStartup: StartupItem[] = [
+  { id: "userRun:Discord", name: "Discord", command: "Update.exe --processStart Discord.exe", source: "userRun", enabled: true, protected: null },
+  { id: "machineRun:SecurityHealth", name: "SecurityHealth", command: "SecurityHealthSystray.exe", source: "machineRun", enabled: true, protected: "Windows Security." },
+];
+
+const previewBackground: Background = {
+  tasks: [
+    {
+      path: "\\Microsoft\\Windows\\Application Experience\\Microsoft Compatibility Appraiser",
+      name: "Microsoft Compatibility Appraiser",
+      description: "Scans installed programs and sends compatibility telemetry.",
+      enabled: true,
+    },
+  ],
+  services: [
+    {
+      name: "DiagTrack",
+      display: "Connected User Experiences and Telemetry",
+      description: "Sends diagnostic data to Microsoft in the background.",
+      current: "automatic",
+      running: true,
+      recommended: "disabled",
+      risk: "moderate",
+    },
+  ],
+  changed: [],
+};
+
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
 
@@ -432,6 +520,38 @@ export const api = {
 
   timerBenchmark(): Promise<BenchReport> {
     return inTauri() ? call<BenchReport>("timer_benchmark") : notInPreview();
+  },
+
+  debloatApps(): Promise<AppRow[]> {
+    return inTauri() ? call<AppRow[]>("debloat_apps") : Promise.resolve(previewApps);
+  },
+
+  debloatRemoveApps(names: string[]): Promise<ItemResult[]> {
+    return inTauri() ? call<ItemResult[]>("debloat_remove_apps", { names }) : notInPreview();
+  },
+
+  debloatRestoreApp(name: string): Promise<void> {
+    return inTauri() ? call<void>("debloat_restore_app", { name }) : notInPreview();
+  },
+
+  debloatStartup(): Promise<StartupItem[]> {
+    return inTauri() ? call<StartupItem[]>("debloat_startup") : Promise.resolve(previewStartup);
+  },
+
+  debloatSetStartup(id: string, enabled: boolean): Promise<void> {
+    return inTauri() ? call<void>("debloat_set_startup", { id, enabled }) : notInPreview();
+  },
+
+  debloatBackground(): Promise<Background> {
+    return inTauri() ? call<Background>("debloat_background") : Promise.resolve(previewBackground);
+  },
+
+  debloatApplyBackground(tasks: string[], services: string[]): Promise<ItemResult[]> {
+    return inTauri() ? call<ItemResult[]>("debloat_apply_background", { tasks, services }) : notInPreview();
+  },
+
+  debloatRestoreBackground(key: string): Promise<void> {
+    return inTauri() ? call<void>("debloat_restore_background", { key }) : notInPreview();
   },
 
   applyPreset(ids: string[]): Promise<BatchReport> {

@@ -1,19 +1,12 @@
 import type { PageId } from "@/lib/routes";
 import { routeById } from "@/lib/routes";
 import { DashboardPage } from "./DashboardPage";
+import { DebloatPage } from "./DebloatPage";
 import { PowerPage } from "./PowerPage";
 import { TimerPage } from "./TimerPage";
 import { PlannedPage } from "./PlannedPage";
 
-const planned: Record<Exclude<PageId, "dashboard" | "power" | "timer">, { stage: number; items: string[] }> = {
-  debloat: {
-    stage: 6,
-    items: [
-      "Remove preinstalled apps, with offline restore",
-      "Disable startup apps the same way Task Manager does",
-      "Turn off suggestions, ads and telemetry tasks; conservative service changes",
-    ],
-  },
+const planned: Record<Exclude<PageId, "dashboard" | "power" | "timer" | "debloat">, { stage: number; items: string[] }> = {
   tweaks: {
     stage: 7,
     items: [
@@ -43,6 +36,7 @@ export function PageView({ page }: { page: PageId }) {
   if (page === "dashboard") return <DashboardPage />;
   if (page === "power") return <PowerPage />;
   if (page === "timer") return <TimerPage />;
+  if (page === "debloat") return <DebloatPage />;
   const { stage, items } = planned[page];
   return <PlannedPage route={routeById(page)} stage={stage} items={items} />;
 }

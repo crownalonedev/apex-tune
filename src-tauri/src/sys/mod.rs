@@ -120,6 +120,8 @@ pub trait Registry: Send + Sync {
     /// whether it was deleted. Succeeds (false) if the key is absent.
     fn delete_key_if_empty(&self, hive: Hive, path: &str) -> SysResult<bool>;
     fn subkeys(&self, hive: Hive, path: &str) -> SysResult<Vec<String>>;
+    /// All values in a key; empty if the key doesn't exist.
+    fn values(&self, hive: Hive, path: &str) -> SysResult<Vec<(String, RegData)>>;
 }
 
 // ---- Services ---------------------------------------------------------------
@@ -235,6 +237,30 @@ pub trait Power: Send + Sync {
     fn has_battery(&self) -> SysResult<bool>;
 }
 
+// ---- App packages (AppX / MSIX) ---------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppPackage {
+    /// Package name without version or publisher hash, e.g. `Microsoft.BingNews`.
+    pub name: String,
+    pub family_name: String,
+    pub full_name: String,
+    pub display_name: String,
+    /// Part of Windows itself; can't be removed.
+    pub system: bool,
+}
+
+pub trait Apps: Send + Sync {
+    /// Apps installed for the current user, without frameworks or resource packs.
+    fn list(&self) -> SysResult<Vec<AppPackage>>;
+    /// Removes the app for the current user only. Its files stay staged if
+    /// Windows provisions it for new users, which keeps re-adding it possible.
+    fn remove(&self, full_name: &str) -> SysResult<()>;
+    /// Re-adds a removed app from the copy Windows keeps staged.
+    fn restore(&self, full_name: &str) -> SysResult<()>;
+}
+
 // ---- Scheduled tasks --------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,6 +295,7 @@ pub struct SysCtx {
     pub restore_points: Arc<dyn RestorePoints>,
     pub power: Arc<dyn Power>,
     pub tasks: Arc<dyn Tasks>,
+    pub apps: Arc<dyn Apps>,
 }
 
 impl SysCtx {
@@ -283,6 +310,7 @@ impl SysCtx {
                 restore_points: Arc::new(win::restore::WinRestorePoints),
                 power: Arc::new(win::power::WinPower),
                 tasks: Arc::new(win::tasks::WinTasks),
+                apps: Arc::new(win::apps::WinApps),
             }
         }
         #[cfg(not(windows))]
@@ -293,7 +321,8 @@ impl SysCtx {
                 services: unsupported.clone(),
                 restore_points: unsupported.clone(),
                 power: unsupported.clone(),
-                tasks: unsupported,
+                tasks: unsupported.clone(),
+                apps: unsupported,
             }
         }
     }
@@ -331,6 +360,9 @@ mod unsupported {
             err("write registry")
         }
         fn subkeys(&self, _: Hive, _: &str) -> SysResult<Vec<String>> {
+            err("read registry")
+        }
+        fn values(&self, _: Hive, _: &str) -> SysResult<Vec<(String, RegData)>> {
             err("read registry")
         }
     }
@@ -416,6 +448,18 @@ mod unsupported {
         }
         fn interactive_account(&self) -> SysResult<String> {
             err("read signed-in user")
+        }
+    }
+
+    impl Apps for Unsupported {
+        fn list(&self) -> SysResult<Vec<AppPackage>> {
+            err("list apps")
+        }
+        fn remove(&self, _: &str) -> SysResult<()> {
+            err("remove app")
+        }
+        fn restore(&self, _: &str) -> SysResult<()> {
+            err("restore app")
         }
     }
 }

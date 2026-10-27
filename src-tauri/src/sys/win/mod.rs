@@ -1,5 +1,6 @@
 //! Real Windows implementations of the `sys` traits.
 
+pub mod apps;
 pub mod power;
 pub mod registry;
 pub mod restore;

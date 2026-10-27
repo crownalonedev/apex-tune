@@ -166,6 +166,17 @@ impl Registry for FakeRegistry {
             .map(|(_, p)| p[prefix.len()..].to_owned())
             .collect())
     }
+
+    fn values(&self, hive: Hive, path: &str) -> SysResult<Vec<(String, RegData)>> {
+        let key = norm(path);
+        let st = lock(&self.state);
+        Ok(st
+            .values
+            .iter()
+            .filter(|((h, p, _), _)| *h == hive && *p == key)
+            .map(|((_, _, n), d)| (n.clone(), d.clone()))
+            .collect())
+    }
 }
 
 // ---- Services ---------------------------------------------------------------
@@ -563,6 +574,67 @@ impl Tasks for FakeTasks {
     }
 }
 
+// ---- Apps -------------------------------------------------------------------
+
+#[derive(Default)]
+pub struct FakeApps {
+    pub installed: Mutex<Vec<AppPackage>>,
+    /// Family names Windows keeps staged, so they can be restored.
+    pub staged: Mutex<Vec<AppPackage>>,
+}
+
+impl FakeApps {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn install(&self, name: &str, staged: bool) {
+        let pkg = AppPackage {
+            name: name.into(),
+            family_name: format!("{name}_8wekyb3d8bbwe"),
+            full_name: format!("{name}_1.0.0.0_x64__8wekyb3d8bbwe"),
+            display_name: name.rsplit('.').next().unwrap_or(name).into(),
+            system: false,
+        };
+        if staged {
+            lock(&self.staged).push(pkg.clone());
+        }
+        lock(&self.installed).push(pkg);
+    }
+
+    pub fn has(&self, name: &str) -> bool {
+        lock(&self.installed).iter().any(|p| p.name == name)
+    }
+}
+
+impl Apps for FakeApps {
+    fn list(&self) -> SysResult<Vec<AppPackage>> {
+        Ok(lock(&self.installed).clone())
+    }
+
+    fn remove(&self, full_name: &str) -> SysResult<()> {
+        lock(&self.installed).retain(|p| p.full_name != full_name);
+        Ok(())
+    }
+
+    fn restore(&self, full_name: &str) -> SysResult<()> {
+        let pkg = lock(&self.staged)
+            .iter()
+            .find(|p| p.full_name == full_name)
+            .cloned()
+            .ok_or_else(|| {
+                SysError::new(
+                    SysErrorKind::NotFound,
+                    "restore app",
+                    full_name,
+                    "No staged copy; reinstall it from the Store.",
+                )
+            })?;
+        lock(&self.installed).push(pkg);
+        Ok(())
+    }
+}
+
 /// A full fake system plus typed handles to each fake for assertions.
 pub struct FakeSystem {
     pub ctx: SysCtx,
@@ -571,6 +643,7 @@ pub struct FakeSystem {
     pub restore_points: Arc<FakeRestorePoints>,
     pub power: Arc<FakePower>,
     pub tasks: Arc<FakeTasks>,
+    pub apps: Arc<FakeApps>,
 }
 
 impl FakeSystem {
@@ -580,12 +653,14 @@ impl FakeSystem {
         let restore_points = FakeRestorePoints::new(Some(true));
         let power = FakePower::new();
         let tasks = FakeTasks::new();
+        let apps = FakeApps::new();
         let ctx = SysCtx {
             registry: registry.clone(),
             services: services.clone(),
             restore_points: restore_points.clone(),
             power: power.clone(),
             tasks: tasks.clone(),
+            apps: apps.clone(),
         };
         Self {
             ctx,
@@ -594,6 +669,7 @@ impl FakeSystem {
             restore_points,
             power,
             tasks,
+            apps,
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod commands;
+pub mod debloat;
 pub mod error;
 pub mod guard;
 pub mod hw;
@@ -92,6 +93,14 @@ pub fn run() {
             commands::timer::timer_stop,
             commands::timer::timer_set_autostart,
             commands::timer::timer_benchmark,
+            commands::debloat::debloat_apps,
+            commands::debloat::debloat_remove_apps,
+            commands::debloat::debloat_restore_app,
+            commands::debloat::debloat_startup,
+            commands::debloat::debloat_set_startup,
+            commands::debloat::debloat_background,
+            commands::debloat::debloat_apply_background,
+            commands::debloat::debloat_restore_background,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod dashboard;
+pub mod debloat;
 pub mod power;
 pub mod safety;
 pub mod timer;

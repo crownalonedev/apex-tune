@@ -2,7 +2,7 @@
 //! that Windows exposes in Settings; nothing here touches security.
 
 use super::{Atom, Category, Restart, Risk, StaticTweak, TweakMeta};
-use crate::sys::Hive::CurrentUser;
+use crate::sys::Hive::{CurrentUser, LocalMachine as HKLM};
 
 const CDM: &str = r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager";
 const EXPLORER_ADVANCED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced";
@@ -147,6 +147,165 @@ pub fn ad_id_off() -> StaticTweak {
     }
 }
 
+fn custom(
+    id: &'static str,
+    name: &'static str,
+    description: &'static str,
+    risk: Risk,
+    restart: Restart,
+    recommended: bool,
+) -> TweakMeta {
+    TweakMeta {
+        id,
+        name,
+        description,
+        category: Category::Privacy,
+        risk,
+        restart,
+        recommended,
+    }
+}
+
+pub fn widgets_off() -> StaticTweak {
+    StaticTweak {
+        meta: custom(
+            "widgets_off",
+            "Turn off Widgets",
+            "Removes the Widgets board and its always-running Widgets and WebView2 processes, which use a few \
+             hundred MB of RAM. Uses Microsoft's \"Allow widgets\" policy.",
+            Risk::Safe,
+            Restart::Explorer,
+            true,
+        ),
+        atoms: || {
+            vec![Atom::reg_dword(
+                HKLM,
+                r"SOFTWARE\Policies\Microsoft\Dsh",
+                "AllowNewsAndInterests",
+                0,
+            )]
+        },
+    }
+}
+
+pub fn edge_background_off() -> StaticTweak {
+    StaticTweak {
+        meta: custom(
+            "edge_background_off",
+            "Stop Edge running in the background",
+            "Turns off Edge Startup Boost and background mode, so no Edge processes run when Edge is closed. Edge \
+             opens a moment slower and shows \"managed by your organization\" in its settings, because these are \
+             Edge policies.",
+            Risk::Safe,
+            Restart::None,
+            true,
+        ),
+        atoms: || {
+            vec![
+                Atom::reg_dword(
+                    HKLM,
+                    r"SOFTWARE\Policies\Microsoft\Edge",
+                    "StartupBoostEnabled",
+                    0,
+                ),
+                Atom::reg_dword(
+                    HKLM,
+                    r"SOFTWARE\Policies\Microsoft\Edge",
+                    "BackgroundModeEnabled",
+                    0,
+                ),
+            ]
+        },
+    }
+}
+
+pub fn background_apps_off() -> StaticTweak {
+    StaticTweak {
+        meta: custom(
+            "background_apps_off",
+            "Stop Store apps running in the background",
+            "Store apps (Mail, Photos, Phone Link and others) can no longer run or sync while closed. Breaks Windows \
+             Spotlight wallpapers and live notifications from those apps.",
+            Risk::Moderate,
+            Restart::SignOut,
+            false,
+        ),
+        atoms: || {
+            vec![Atom::reg_dword(
+                CurrentUser,
+                r"Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications",
+                "GlobalUserDisabled",
+                1,
+            )]
+        },
+    }
+}
+
+pub fn web_search_off() -> StaticTweak {
+    StaticTweak {
+        meta: custom(
+            "web_search_off",
+            "No web results in Start search",
+            "Start menu search only searches your PC, without Bing results, so it's faster and keeps typed searches \
+             local.",
+            Risk::Moderate,
+            Restart::Explorer,
+            false,
+        ),
+        atoms: || {
+            vec![Atom::reg_dword(
+                CurrentUser,
+                r"Software\Policies\Microsoft\Windows\Explorer",
+                "DisableSearchBoxSuggestions",
+                1,
+            )]
+        },
+    }
+}
+
+pub fn telemetry_required() -> StaticTweak {
+    StaticTweak {
+        meta: custom(
+            "telemetry_required",
+            "Send only required diagnostic data",
+            "Sets diagnostic data to Required, the lowest level Windows Home and Pro honour. Updates and security \
+             are unaffected.",
+            Risk::Safe,
+            Restart::None,
+            false,
+        ),
+        atoms: || {
+            vec![Atom::reg_dword(
+                HKLM,
+                r"SOFTWARE\Policies\Microsoft\Windows\DataCollection",
+                "AllowTelemetry",
+                1,
+            )]
+        },
+    }
+}
+
+pub fn recall_off() -> StaticTweak {
+    StaticTweak {
+        meta: custom(
+            "recall_off",
+            "Turn off Recall snapshots",
+            "Stops Windows Recall from saving screenshots of your activity on Copilot+ PCs. Has no effect on other PCs.",
+            Risk::Safe,
+            Restart::SignOut,
+            false,
+        ),
+        atoms: || {
+            vec![Atom::reg_dword(
+                CurrentUser,
+                r"Software\Policies\Microsoft\Windows\WindowsAI",
+                "DisableAIDataAnalysis",
+                1,
+            )]
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,6 +322,12 @@ mod tests {
             lockscreen_ads_off(),
             explorer_ads_off(),
             ad_id_off(),
+            widgets_off(),
+            edge_background_off(),
+            background_apps_off(),
+            web_search_off(),
+            telemetry_required(),
+            recall_off(),
         ] {
             for atom in tweak.atoms(&sys.ctx).unwrap() {
                 guard::check_atom(&atom).unwrap();

@@ -184,6 +184,12 @@ pub fn catalog() -> Vec<std::sync::Arc<dyn Tweak>> {
         std::sync::Arc::new(privacy::lockscreen_ads_off()),
         std::sync::Arc::new(privacy::explorer_ads_off()),
         std::sync::Arc::new(privacy::ad_id_off()),
+        std::sync::Arc::new(privacy::widgets_off()),
+        std::sync::Arc::new(privacy::edge_background_off()),
+        std::sync::Arc::new(privacy::background_apps_off()),
+        std::sync::Arc::new(privacy::web_search_off()),
+        std::sync::Arc::new(privacy::telemetry_required()),
+        std::sync::Arc::new(privacy::recall_off()),
     ]
 }
 

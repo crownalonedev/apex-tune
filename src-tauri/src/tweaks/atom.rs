@@ -67,6 +67,12 @@ pub enum Atom {
         path: String,
         enabled: bool,
     },
+    /// Removes a preinstalled app for the current user.
+    AppRemoved {
+        name: String,
+        full_name: String,
+        display_name: String,
+    },
 }
 
 /// How a power setting's raw value reads to a person.
@@ -127,6 +133,9 @@ pub enum Original {
     TaskEnabled {
         /// `None` when the task doesn't exist; the atom then does nothing.
         enabled: Option<bool>,
+    },
+    AppRemoved {
+        installed: bool,
     },
 }
 
@@ -190,7 +199,16 @@ impl Atom {
             Atom::ActivePowerPlan { .. } => "Active power plan".into(),
             Atom::LogonTask { path, .. } => format!("Sign-in task {path}"),
             Atom::TaskEnabled { path, .. } => format!("Scheduled task {path}"),
+            Atom::AppRemoved { display_name, .. } => format!("App {display_name}"),
         }
+    }
+
+    fn app_installed(ctx: &SysCtx, name: &str) -> SysResult<bool> {
+        Ok(ctx
+            .apps
+            .list()?
+            .iter()
+            .any(|p| p.name.eq_ignore_ascii_case(name)))
     }
 
     fn logon_xml(
@@ -249,6 +267,9 @@ impl Atom {
             }),
             Atom::TaskEnabled { path, .. } => Ok(Original::TaskEnabled {
                 enabled: ctx.tasks.get(path)?.map(|(_, enabled)| enabled),
+            }),
+            Atom::AppRemoved { name, .. } => Ok(Original::AppRemoved {
+                installed: Self::app_installed(ctx, name)?,
             }),
         }
     }
@@ -329,6 +350,14 @@ impl Atom {
                 Some((_, now)) if now != *enabled => ctx.tasks.set_enabled(path, *enabled),
                 _ => Ok(()),
             },
+            Atom::AppRemoved {
+                name, full_name, ..
+            } => {
+                if Self::app_installed(ctx, name)? {
+                    ctx.apps.remove(full_name)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -407,6 +436,17 @@ impl Atom {
                     ctx.tasks.set_enabled(path, *enabled)
                 }
             },
+            (
+                Atom::AppRemoved {
+                    name, full_name, ..
+                },
+                Original::AppRemoved { installed },
+            ) => {
+                if *installed && !Self::app_installed(ctx, name)? {
+                    ctx.apps.restore(full_name)?;
+                }
+                Ok(())
+            }
             (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
                 match (enabled, ctx.tasks.get(path)?) {
                     (Some(before), Some((_, now))) if *before != now => {
@@ -470,6 +510,7 @@ impl Atom {
             Atom::TaskEnabled { path, enabled } => {
                 Ok(ctx.tasks.get(path)?.is_none_or(|(_, now)| now == *enabled))
             }
+            Atom::AppRemoved { name, .. } => Ok(!Self::app_installed(ctx, name)?),
         }
     }
 
@@ -509,6 +550,9 @@ impl Atom {
             }
             (Atom::LogonTask { path, .. }, Original::LogonTask { xml, .. }) => {
                 Ok(ctx.tasks.get(path)?.is_some() == xml.is_some())
+            }
+            (Atom::AppRemoved { name, .. }, Original::AppRemoved { installed }) => {
+                Ok(Self::app_installed(ctx, name)? == *installed)
             }
             (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
                 Ok(match enabled {
@@ -611,6 +655,16 @@ impl Atom {
                     Some((_, false)) => "Disabled".into(),
                 },
                 to: if *enabled { "Enabled" } else { "Disabled" }.into(),
+            }),
+            Atom::AppRemoved { name, .. } => Ok(ChangePreview {
+                target,
+                from: if Self::app_installed(ctx, name)? {
+                    "Installed"
+                } else {
+                    "Not installed"
+                }
+                .into(),
+                to: "Removed for your account".into(),
             }),
         }
     }

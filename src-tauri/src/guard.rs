@@ -283,6 +283,14 @@ pub fn check_registry(
     if key.contains("smartscreen") || value_name.contains("smartscreen") {
         return deny(SECURITY);
     }
+    if key.contains(r"explorer\startupapproved") {
+        if is_anti_cheat_name(&value_name) || value_name.contains("riot") {
+            return deny(ANTI_CHEAT);
+        }
+        if value_name.contains("securityhealth") || value_name.contains("windows defender") {
+            return deny(SECURITY);
+        }
+    }
     if let Some(service) = key.strip_prefix(r"system\currentcontrolset\services\") {
         let service = service.split('\\').next().unwrap_or_default();
         if let Some(reason) = service_protection(service) {
@@ -344,6 +352,20 @@ pub fn check_atom(atom: &Atom) -> Result<(), GuardViolation> {
             ..
         } => check_own_task(path, command, *highest),
         Atom::TaskEnabled { path, .. } => check_task(path),
+        Atom::AppRemoved { name, .. } => check_app(name),
+    }
+}
+
+/// Only apps on Apex Tune's reviewed list can be removed; never the Store,
+/// Xbox sign-in and Gaming Services that games need, or system apps.
+fn check_app(name: &str) -> Result<(), GuardViolation> {
+    if crate::debloat::apps::is_removable(name) {
+        Ok(())
+    } else {
+        Err(GuardViolation {
+            target: format!("app {name}"),
+            reason: "it isn't on Apex Tune's list of apps that are safe to remove",
+        })
     }
 }
 
