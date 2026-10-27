@@ -10,7 +10,10 @@ pub fn exe_path() -> Option<PathBuf> {
         .ok()?
         .parent()?
         .join(apex_timer::EXE_NAME);
-    exe.exists().then_some(exe)
+    // Debug builds may carry an empty placeholder (see build.rs); that's not a helper.
+    std::fs::metadata(&exe)
+        .is_ok_and(|m| m.len() > 0)
+        .then_some(exe)
 }
 
 #[cfg(windows)]

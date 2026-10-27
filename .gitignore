@@ -7,3 +7,4 @@ src-tauri/gen/
 .DS_Store
 coverage/
 .claude/
+src-tauri/binaries/

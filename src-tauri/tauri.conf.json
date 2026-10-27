@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.apextune.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "pnpm sidecar && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm sidecar:release && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -29,7 +29,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": [
+      "msi",
+      "nsis"
+    ],
     "publisher": "Apex Tune",
     "category": "Utility",
     "shortDescription": "Reversible Windows 11 gaming optimizer",
@@ -41,8 +44,26 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" },
-      "nsis": { "installMode": "perMachine" }
-    }
-  }
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": false,
+        "installerHooks": "windows/hooks.nsh"
+      },
+      "wix": {
+        "upgradeCode": "b2bdc735-2cf5-45ed-adbd-01ba4c5245ab"
+      }
+    },
+    "externalBin": [
+      "binaries/apex-timer"
+    ],
+    "copyright": "Apex Tune",
+    "longDescription": "Reversible Windows 11 gaming optimizer: every change is backed up and can be undone."
+  },
+  "mainBinaryName": "apex-tune"
 }

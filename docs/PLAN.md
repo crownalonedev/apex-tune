@@ -1,6 +1,6 @@
 # Apex Tune: architecture plan and tweak catalog
 
-Status: **draft, waiting for approval**. Nothing has been scaffolded yet.
+Status: **implemented**. This is the original design; the shipped catalog grew after the research pass in [RESEARCH.md](RESEARCH.md), and the [README](../README.md) lists every tweak as built.
 
 ---
 

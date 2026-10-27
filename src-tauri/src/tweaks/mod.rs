@@ -304,6 +304,18 @@ mod catalog_tests {
     }
 
     #[test]
+    fn every_tweak_is_documented_in_the_readme() {
+        let readme = include_str!("../../../README.md");
+        for t in catalog() {
+            assert!(
+                readme.contains(t.name()),
+                "README is missing \"{}\"",
+                t.name()
+            );
+        }
+    }
+
+    #[test]
     fn the_preset_is_safe_only() {
         for t in catalog() {
             if t.meta().recommended {
