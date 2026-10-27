@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { ShieldAlert, ShieldCheck, ScrollText } from "lucide-react";
 import { routes } from "@/lib/routes";
 import { cn } from "@/lib/utils";
@@ -35,9 +36,11 @@ export function Sidebar() {
                   )}
                 >
                   {active && (
-                    <span
+                    <motion.span
+                      layoutId="nav-marker"
                       aria-hidden="true"
                       className="absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-signal"
+                      transition={{ type: "spring", stiffness: 520, damping: 40 }}
                     />
                   )}
                   <Icon className={cn("size-4", active && "text-signal")} aria-hidden="true" />

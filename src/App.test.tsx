@@ -16,7 +16,7 @@ describe("App shell", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Dashboard" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Power" }));
-    expect(screen.getByRole("heading", { level: 1, name: "Power" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Power" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Power" })).toHaveAttribute("aria-current", "page");
   });
 

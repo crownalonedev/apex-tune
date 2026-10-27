@@ -385,6 +385,22 @@ export interface SessionView {
   entries: EntryView[];
 }
 
+export type ThemeName = "system" | "graphite" | "ember" | "moss" | "violet" | "oled" | "daylight";
+export type MotionPref = "system" | "full" | "reduced";
+
+export interface Settings {
+  theme: ThemeName;
+  motion: MotionPref;
+  minimizeToTray: boolean;
+  checkForUpdates: boolean;
+}
+
+export interface SettingsView extends Settings {
+  startWithWindows: boolean;
+  dataDir: string;
+  version: string;
+}
+
 export const APEX_PLAN_TWEAK = "power_plan";
 export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
@@ -560,6 +576,25 @@ const previewProfiles: ProfileView[] = [
   { format: "apex-tune-profile", version: 1, id: "builtin.gaming", name: "Gaming (Safe preset)", description: "The Optimize for Gaming preset.", createdAt: "2026-10-26T12:00:00Z", tweaks: ["game_mode", "game_dvr_off", "windowed_games"], builtIn: true, applied: 1 },
   { format: "apex-tune-profile", version: 1, id: "builtin.competitive", name: "Competitive", description: "The Safe preset plus Moderate tweaks for lower latency and a lighter desktop.", createdAt: "2026-10-26T12:00:00Z", tweaks: ["game_mode", "game_dvr_off", "windowed_games", "mmcss_responsiveness"], builtIn: true, applied: 1 },
 ];
+
+function previewSettings(): SettingsView {
+  let saved: Partial<Settings> = {};
+  try {
+    saved = JSON.parse(localStorage.getItem("apex-preview-settings") ?? "{}") as Partial<Settings>;
+  } catch {
+    // Ignore unreadable preview settings.
+  }
+  return {
+    theme: "graphite",
+    motion: "system",
+    minimizeToTray: false,
+    checkForUpdates: true,
+    ...saved,
+    startWithWindows: false,
+    dataDir: "",
+    version: "0.1.0",
+  };
+}
 
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
@@ -805,6 +840,28 @@ export const api = {
 
   profileImport(path: string): Promise<{ profile: ProfileView; dropped: string[] }> {
     return inTauri() ? call("profile_import", { path }) : notInPreview();
+  },
+
+  settingsGet(): Promise<SettingsView> {
+    return inTauri() ? call<SettingsView>("settings_get") : Promise.resolve(previewSettings());
+  },
+
+  settingsSet(settings: Settings): Promise<void> {
+    if (inTauri()) return call<void>("settings_set", { settings });
+    try {
+      localStorage.setItem("apex-preview-settings", JSON.stringify(settings));
+    } catch {
+      // Preview only; nothing to persist to.
+    }
+    return Promise.resolve();
+  },
+
+  settingsSetAutostart(enabled: boolean): Promise<void> {
+    return inTauri() ? call<void>("settings_set_autostart", { enabled }) : notInPreview();
+  },
+
+  openLogsFolder(): Promise<void> {
+    return inTauri() ? call<void>("open_logs_folder") : notInPreview();
   },
 
   applyPreset(ids: string[]): Promise<BatchReport> {

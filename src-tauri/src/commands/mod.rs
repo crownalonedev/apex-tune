@@ -8,5 +8,6 @@ pub mod nvidia;
 pub mod power;
 pub mod profiles;
 pub mod safety;
+pub mod settings;
 pub mod timer;
 pub mod tweaks;

@@ -13,6 +13,7 @@ pub mod paths;
 pub mod platform;
 pub mod power;
 pub mod profiles;
+pub mod settings;
 pub mod storage;
 pub mod sys;
 pub mod timer;
@@ -47,12 +48,7 @@ pub fn run() {
 
     tauri::Builder::default()
         // Must be registered first so a second launch focuses this window.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-        }))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(activity.clone())
@@ -72,7 +68,29 @@ pub fn run() {
                 tracing::warn!("Apex Tune is not running as administrator; changes will fail");
             }
             app.manage(start_engine());
+            app.manage(commands::settings::SettingsState(std::sync::Mutex::new(settings::load())));
+            build_tray(app)?;
+            // The sign-in task starts Apex Tune quietly in the tray.
+            if std::env::args().any(|a| a == settings::MINIMIZED_ARG)
+                && let Some(window) = app.get_webview_window("main")
+            {
+                let _ = window.hide();
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let to_tray = window
+                    .state::<commands::settings::SettingsState>()
+                    .0
+                    .lock()
+                    .map(|s| s.minimize_to_tray)
+                    .unwrap_or(false);
+                if to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::app_info,
@@ -134,6 +152,10 @@ pub fn run() {
             commands::profiles::profile_delete,
             commands::profiles::profile_export,
             commands::profiles::profile_import,
+            commands::settings::settings_get,
+            commands::settings::settings_set,
+            commands::settings::settings_set_autostart,
+            commands::settings::open_logs_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");
@@ -153,4 +175,45 @@ fn start_engine() -> commands::safety::EngineState {
             commands::safety::EngineState::new(Err(e.to_string()), Vec::new())
         }
     }
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+fn build_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open = MenuItem::with_id(app, "open", "Open Apex Tune", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let mut tray = TrayIconBuilder::with_id("main")
+        .tooltip("Apex Tune")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open" => show_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
+    Ok(())
 }

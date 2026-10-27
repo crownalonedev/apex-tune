@@ -1,14 +1,16 @@
 @import "tailwindcss";
 @import "@fontsource-variable/archivo/wdth.css";
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark (&:where([data-theme]:not([data-theme="daylight"]), [data-theme]:not([data-theme="daylight"]) *));
 
 /*
- * Tokens. A cool slate bench with one signal colour (ice blue) for focus,
- * selection and "applied" state. Risk colours are reserved for risk badges.
+ * Themes. Each is a base surface family plus one signal colour used for
+ * focus, selection and "applied" state. Risk colours are reserved for risk
+ * badges. Chart strokes were run through the palette validator against each
+ * theme's panel colour.
  */
 :root,
-[data-theme="dark"] {
+[data-theme="graphite"] {
   --bg: #121820;
   --panel: #18202b;
   --panel-raised: #1e2834;
@@ -20,7 +22,6 @@
   --signal: #7cc4fa;
   --signal-soft: rgb(124 196 250 / 0.14);
   --signal-ink: #0e2233;
-  /* Chart stroke: validated against --panel for the dark band. */
   --chart: #3f9be0;
   --safe: #5cc49a;
   --moderate: #e5b54a;
@@ -29,7 +30,88 @@
   color-scheme: dark;
 }
 
-[data-theme="light"] {
+[data-theme="ember"] {
+  --bg: #171311;
+  --panel: #1f1a17;
+  --panel-raised: #28211d;
+  --line: #3a302a;
+  --line-strong: #4d4038;
+  --text: #f1e9e2;
+  --text-muted: #a8988b;
+  --text-faint: #7c6e63;
+  --signal: #f2a65a;
+  --signal-soft: rgb(242 166 90 / 0.14);
+  --signal-ink: #2b1606;
+  --chart: #c9741f;
+  --safe: #79c58f;
+  --moderate: #e8c35a;
+  --advanced: #ef7a6c;
+  --danger: #ef7a6c;
+  color-scheme: dark;
+}
+
+[data-theme="moss"] {
+  --bg: #111815;
+  --panel: #161f1b;
+  --panel-raised: #1c2722;
+  --line: #283830;
+  --line-strong: #364a40;
+  --text: #e5efe9;
+  --text-muted: #8ea398;
+  --text-faint: #66796f;
+  --signal: #6fd3a8;
+  --signal-soft: rgb(111 211 168 / 0.13);
+  --signal-ink: #072318;
+  --chart: #2fa877;
+  --safe: #8fd06a;
+  --moderate: #e5b54a;
+  --advanced: #ee7470;
+  --danger: #ee7470;
+  color-scheme: dark;
+}
+
+[data-theme="violet"] {
+  --bg: #15131d;
+  --panel: #1c1a26;
+  --panel-raised: #242131;
+  --line: #332f45;
+  --line-strong: #443f5a;
+  --text: #ece9f5;
+  --text-muted: #9a94b0;
+  --text-faint: #716b88;
+  --signal: #b59cff;
+  --signal-soft: rgb(181 156 255 / 0.15);
+  --signal-ink: #1a0f3d;
+  --chart: #8a6be6;
+  --safe: #5cc49a;
+  --moderate: #e5b54a;
+  --advanced: #ee7470;
+  --danger: #ee7470;
+  color-scheme: dark;
+}
+
+/* True black for OLED panels: pixels off, no burn-in from grey fills. */
+[data-theme="oled"] {
+  --bg: #000000;
+  --panel: #0a0a0a;
+  --panel-raised: #141414;
+  --line: #222222;
+  --line-strong: #333333;
+  --text: #ededed;
+  --text-muted: #9a9a9a;
+  --text-faint: #6c6c6c;
+  --signal: #7cc4fa;
+  --signal-soft: rgb(124 196 250 / 0.14);
+  --signal-ink: #0e2233;
+  --chart: #3f9be0;
+  --safe: #5cc49a;
+  --moderate: #e5b54a;
+  --advanced: #ee7470;
+  --danger: #ee7470;
+  color-scheme: dark;
+}
+
+[data-theme="daylight"] {
   --bg: #eef1f5;
   --panel: #ffffff;
   --panel-raised: #f6f8fb;
@@ -47,6 +129,12 @@
   --advanced: #c23f3b;
   --danger: #c23f3b;
   color-scheme: light;
+}
+
+/* Theme changes crossfade instead of snapping (where the WebView supports it). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.28s;
 }
 
 @theme inline {
@@ -121,10 +209,18 @@
   }
 }
 
+/* Settings → Motion → Reduced, or Windows' own reduced-motion setting. */
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
