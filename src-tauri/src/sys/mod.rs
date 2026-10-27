@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(any(test, feature = "fake-sys"))]
 pub mod fake;
+pub mod task_xml;
 #[cfg(windows)]
 pub mod win;
 
@@ -234,6 +235,30 @@ pub trait Power: Send + Sync {
     fn has_battery(&self) -> SysResult<bool>;
 }
 
+// ---- Scheduled tasks --------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskInfo {
+    /// Full path, e.g. `\Microsoft\Windows\Maps\MapsUpdateTask`.
+    pub path: String,
+    pub enabled: bool,
+}
+
+pub trait Tasks: Send + Sync {
+    /// The task's XML definition and enabled state, or `None` if it doesn't exist.
+    fn get(&self, path: &str) -> SysResult<Option<(String, bool)>>;
+    /// Creates or replaces a task from XML, creating its folder if needed.
+    fn register(&self, path: &str, xml: &str) -> SysResult<()>;
+    /// Succeeds if the task is already gone.
+    fn delete(&self, path: &str) -> SysResult<()>;
+    fn set_enabled(&self, path: &str, enabled: bool) -> SysResult<()>;
+    /// Tasks in a folder, optionally including subfolders.
+    fn list(&self, folder: &str, recursive: bool) -> SysResult<Vec<TaskInfo>>;
+    /// `DOMAIN\user` of the signed-in user, for logon triggers.
+    fn interactive_account(&self) -> SysResult<String>;
+}
+
 // ---- Context ----------------------------------------------------------------
 
 /// Everything a tweak may use to read or change the system.
@@ -243,6 +268,7 @@ pub struct SysCtx {
     pub services: Arc<dyn Services>,
     pub restore_points: Arc<dyn RestorePoints>,
     pub power: Arc<dyn Power>,
+    pub tasks: Arc<dyn Tasks>,
 }
 
 impl SysCtx {
@@ -256,6 +282,7 @@ impl SysCtx {
                 services: Arc::new(win::services::WinServices),
                 restore_points: Arc::new(win::restore::WinRestorePoints),
                 power: Arc::new(win::power::WinPower),
+                tasks: Arc::new(win::tasks::WinTasks),
             }
         }
         #[cfg(not(windows))]
@@ -265,7 +292,8 @@ impl SysCtx {
                 registry: unsupported.clone(),
                 services: unsupported.clone(),
                 restore_points: unsupported.clone(),
-                power: unsupported,
+                power: unsupported.clone(),
+                tasks: unsupported,
             }
         }
     }
@@ -367,6 +395,27 @@ mod unsupported {
         }
         fn has_battery(&self) -> SysResult<bool> {
             Ok(false)
+        }
+    }
+
+    impl Tasks for Unsupported {
+        fn get(&self, _: &str) -> SysResult<Option<(String, bool)>> {
+            err("read scheduled task")
+        }
+        fn register(&self, _: &str, _: &str) -> SysResult<()> {
+            err("create scheduled task")
+        }
+        fn delete(&self, _: &str) -> SysResult<()> {
+            err("delete scheduled task")
+        }
+        fn set_enabled(&self, _: &str, _: bool) -> SysResult<()> {
+            err("change scheduled task")
+        }
+        fn list(&self, _: &str, _: bool) -> SysResult<Vec<TaskInfo>> {
+            err("list scheduled tasks")
+        }
+        fn interactive_account(&self) -> SysResult<String> {
+            err("read signed-in user")
         }
     }
 }

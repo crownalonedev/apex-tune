@@ -337,7 +337,67 @@ pub fn check_atom(atom: &Atom) -> Result<(), GuardViolation> {
         Atom::Service { name, .. } => check_service(name),
         Atom::PowerPlan { guid, name, .. } => check_power_plan(guid, name),
         Atom::PowerSetting { .. } | Atom::ActivePowerPlan { .. } => Ok(()),
+        Atom::LogonTask {
+            path,
+            command,
+            highest,
+            ..
+        } => check_own_task(path, command, *highest),
+        Atom::TaskEnabled { path, .. } => check_task(path),
     }
+}
+
+/// Task folders whose tasks keep Windows secure and updated.
+const PROTECTED_TASK_FOLDERS: &[(&str, &str)] = &[
+    (r"\microsoft\windows\windows defender", SECURITY),
+    (r"\microsoft\windows\exploitguard", SECURITY),
+    (r"\microsoft\windows\windowsupdate", UPDATES),
+    (r"\microsoft\windows\updateorchestrator", UPDATES),
+    (r"\microsoft\windows\waasmedic", UPDATES),
+    (r"\microsoft\windows\tpm", SECURITY),
+    (r"\microsoft\windows\bitlocker", SECURITY),
+];
+
+fn check_task(path: &str) -> Result<(), GuardViolation> {
+    let lower = path.to_ascii_lowercase();
+    let deny = |reason| {
+        Err(GuardViolation {
+            target: format!("task {path}"),
+            reason,
+        })
+    };
+    if is_anti_cheat_name(&lower) || lower.contains("riot") {
+        return deny(ANTI_CHEAT);
+    }
+    if let Some((_, reason)) = PROTECTED_TASK_FOLDERS
+        .iter()
+        .find(|(f, _)| under(&lower, f))
+    {
+        return deny(reason);
+    }
+    Ok(())
+}
+
+/// Apex Tune only creates tasks in its own folder, and only Apex Tune itself runs elevated.
+fn check_own_task(path: &str, command: &str, highest: bool) -> Result<(), GuardViolation> {
+    let deny = |reason| {
+        Err(GuardViolation {
+            target: format!("task {path}"),
+            reason,
+        })
+    };
+    if !path.to_ascii_lowercase().starts_with(r"\apextune\") {
+        return deny("Apex Tune only creates tasks in its own \\ApexTune folder");
+    }
+    let exe = command
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if highest && exe != "apex-tune.exe" {
+        return deny("only Apex Tune itself may start with administrator rights");
+    }
+    Ok(())
 }
 
 /// Windows' own plans and templates. Apex Tune creates and deletes only its own.
@@ -538,6 +598,40 @@ mod tests {
         };
         assert!(check_atom(&atom("381B4222-F694-41F0-9685-FF5BB260DF2E")).is_err());
         assert!(check_atom(&atom("c855ae8b-fff9-45c7-8c29-99f6f893b54a")).is_ok());
+    }
+
+    #[test]
+    fn tasks_are_limited_to_safe_targets() {
+        let own = |path: &str, command: &str, highest| Atom::LogonTask {
+            path: path.into(),
+            command: command.into(),
+            arguments: String::new(),
+            description: String::new(),
+            highest,
+        };
+        assert!(check_atom(&own(r"\ApexTune\Timer", r"C:\Apex\apex-timer.exe", false)).is_ok());
+        assert!(check_atom(&own(r"\Microsoft\Evil", r"C:\Apex\apex-timer.exe", false)).is_err());
+        assert!(check_atom(&own(r"\ApexTune\Timer", r"C:\Apex\apex-timer.exe", true)).is_err());
+        assert!(check_atom(&own(r"\ApexTune\App", r"C:\Apex\apex-tune.exe", true)).is_ok());
+
+        let toggle = |path: &str| Atom::TaskEnabled {
+            path: path.into(),
+            enabled: false,
+        };
+        assert!(check_atom(&toggle(r"\Microsoft\Windows\Maps\MapsUpdateTask")).is_ok());
+        assert!(
+            check_atom(&toggle(
+                r"\Microsoft\Windows\Windows Defender\Windows Defender Scheduled Scan"
+            ))
+            .is_err()
+        );
+        assert!(
+            check_atom(&toggle(
+                r"\Microsoft\Windows\UpdateOrchestrator\Schedule Scan"
+            ))
+            .is_err()
+        );
+        assert!(check_atom(&toggle(r"\Riot Vanguard Tray")).is_err());
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::sys::task_xml::{self, LogonTask};
 use crate::sys::{
     Hive, PowerSource, RegData, ServiceState, StartType, SysCtx, SysError, SysErrorKind, SysResult,
 };
@@ -50,6 +51,21 @@ pub enum Atom {
     },
     ActivePowerPlan {
         guid: String,
+    },
+    /// One of Apex Tune's own tasks that starts something at sign-in.
+    LogonTask {
+        /// Under `\ApexTune\`.
+        path: String,
+        command: String,
+        arguments: String,
+        description: String,
+        /// Run with highest privileges (only Apex Tune itself needs this).
+        highest: bool,
+    },
+    /// Enables or disables an existing scheduled task.
+    TaskEnabled {
+        path: String,
+        enabled: bool,
     },
 }
 
@@ -102,6 +118,15 @@ pub enum Original {
     },
     ActivePowerPlan {
         guid: String,
+    },
+    LogonTask {
+        /// The previous definition, if the task existed.
+        xml: Option<String>,
+        enabled: bool,
+    },
+    TaskEnabled {
+        /// `None` when the task doesn't exist; the atom then does nothing.
+        enabled: Option<bool>,
     },
 }
 
@@ -163,7 +188,27 @@ impl Atom {
                 PowerSource::Dc => format!("{label} (on battery)"),
             },
             Atom::ActivePowerPlan { .. } => "Active power plan".into(),
+            Atom::LogonTask { path, .. } => format!("Sign-in task {path}"),
+            Atom::TaskEnabled { path, .. } => format!("Scheduled task {path}"),
         }
+    }
+
+    fn logon_xml(
+        ctx: &SysCtx,
+        command: &str,
+        arguments: &str,
+        description: &str,
+        highest: bool,
+    ) -> SysResult<String> {
+        let account = ctx.tasks.interactive_account()?;
+        Ok(LogonTask {
+            account: &account,
+            command,
+            arguments,
+            description,
+            highest,
+        }
+        .to_xml())
     }
 
     pub fn capture(&self, ctx: &SysCtx) -> SysResult<Original> {
@@ -191,6 +236,19 @@ impl Atom {
             }),
             Atom::ActivePowerPlan { .. } => Ok(Original::ActivePowerPlan {
                 guid: ctx.power.active()?,
+            }),
+            Atom::LogonTask { path, .. } => Ok(match ctx.tasks.get(path)? {
+                Some((xml, enabled)) => Original::LogonTask {
+                    xml: Some(xml),
+                    enabled,
+                },
+                None => Original::LogonTask {
+                    xml: None,
+                    enabled: false,
+                },
+            }),
+            Atom::TaskEnabled { path, .. } => Ok(Original::TaskEnabled {
+                enabled: ctx.tasks.get(path)?.map(|(_, enabled)| enabled),
             }),
         }
     }
@@ -257,6 +315,20 @@ impl Atom {
                 }
                 ctx.power.set_active(guid)
             }
+            Atom::LogonTask {
+                path,
+                command,
+                arguments,
+                description,
+                highest,
+            } => ctx.tasks.register(
+                path,
+                &Self::logon_xml(ctx, command, arguments, description, *highest)?,
+            ),
+            Atom::TaskEnabled { path, enabled } => match ctx.tasks.get(path)? {
+                Some((_, now)) if now != *enabled => ctx.tasks.set_enabled(path, *enabled),
+                _ => Ok(()),
+            },
         }
     }
 
@@ -328,6 +400,21 @@ impl Atom {
                 }
                 ctx.power.set_active(guid)
             }
+            (Atom::LogonTask { path, .. }, Original::LogonTask { xml, enabled }) => match xml {
+                None => ctx.tasks.delete(path),
+                Some(xml) => {
+                    ctx.tasks.register(path, xml)?;
+                    ctx.tasks.set_enabled(path, *enabled)
+                }
+            },
+            (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
+                match (enabled, ctx.tasks.get(path)?) {
+                    (Some(before), Some((_, now))) if *before != now => {
+                        ctx.tasks.set_enabled(path, *before)
+                    }
+                    _ => Ok(()),
+                }
+            }
             _ => Err(SysError::new(
                 SysErrorKind::Other,
                 "restore",
@@ -366,6 +453,23 @@ impl Atom {
                 ..
             } => Ok(ctx.power.read(scheme, subgroup, setting, *source)? == Some(*value)),
             Atom::ActivePowerPlan { guid } => Ok(ctx.power.active()?.eq_ignore_ascii_case(guid)),
+            Atom::LogonTask {
+                path,
+                command,
+                arguments,
+                ..
+            } => Ok(match ctx.tasks.get(path)? {
+                Some((xml, enabled)) => {
+                    enabled
+                        && task_xml::exec_action(&xml).is_some_and(|(c, a)| {
+                            c.eq_ignore_ascii_case(command) && a == *arguments
+                        })
+                }
+                None => false,
+            }),
+            Atom::TaskEnabled { path, enabled } => {
+                Ok(ctx.tasks.get(path)?.is_none_or(|(_, now)| now == *enabled))
+            }
         }
     }
 
@@ -402,6 +506,15 @@ impl Atom {
                 || ctx.power.read(scheme, subgroup, setting, *source)? == *value),
             (Atom::ActivePowerPlan { .. }, Original::ActivePowerPlan { guid }) => {
                 Ok(ctx.power.active()?.eq_ignore_ascii_case(guid))
+            }
+            (Atom::LogonTask { path, .. }, Original::LogonTask { xml, .. }) => {
+                Ok(ctx.tasks.get(path)?.is_some() == xml.is_some())
+            }
+            (Atom::TaskEnabled { path, .. }, Original::TaskEnabled { enabled }) => {
+                Ok(match enabled {
+                    None => true,
+                    Some(before) => ctx.tasks.get(path)?.is_none_or(|(_, now)| now == *before),
+                })
             }
             _ => Ok(false),
         }
@@ -478,6 +591,27 @@ impl Atom {
                     to: name_of(guid),
                 })
             }
+            Atom::LogonTask {
+                command, arguments, ..
+            } => Ok(ChangePreview {
+                target,
+                from: if ctx.tasks.get(&self.label())?.is_some() {
+                    "Exists"
+                } else {
+                    "Not set up"
+                }
+                .into(),
+                to: format!("Runs {command} {arguments} at sign-in"),
+            }),
+            Atom::TaskEnabled { path, enabled } => Ok(ChangePreview {
+                target,
+                from: match ctx.tasks.get(path)? {
+                    None => "Not present".into(),
+                    Some((_, true)) => "Enabled".into(),
+                    Some((_, false)) => "Disabled".into(),
+                },
+                to: if *enabled { "Enabled" } else { "Disabled" }.into(),
+            }),
         }
     }
 }

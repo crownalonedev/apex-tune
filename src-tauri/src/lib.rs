@@ -8,6 +8,7 @@ pub mod paths;
 pub mod platform;
 pub mod power;
 pub mod sys;
+pub mod timer;
 pub mod tweaks;
 
 use std::sync::Arc;
@@ -82,9 +83,15 @@ pub fn run() {
             commands::tweaks::apply_tweak,
             commands::tweaks::revert_tweak,
             commands::tweaks::preset_preview,
+            commands::tweaks::tweak_plan,
             commands::tweaks::apply_preset,
             commands::power::power_overview,
             commands::power::power_switch,
+            commands::timer::timer_status,
+            commands::timer::timer_start,
+            commands::timer::timer_stop,
+            commands::timer::timer_set_autostart,
+            commands::timer::timer_benchmark,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

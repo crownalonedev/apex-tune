@@ -200,6 +200,29 @@ export interface PowerOverview {
   settings: PowerSettingRow[];
 }
 
+export interface TimerStatus {
+  resolution: { coarsest: number; finest: number; current: number } | null;
+  helperAvailable: boolean;
+  helperRunning: boolean;
+  /** 100 ns units. */
+  units: number;
+  autostart: boolean;
+}
+
+export interface BenchRow {
+  requested: number | null;
+  granted: number | null;
+  meanMs: number;
+  p99Ms: number;
+  maxMs: number;
+  samples: number;
+}
+
+export interface BenchReport {
+  rows: BenchRow[];
+  recommended: number | null;
+}
+
 export const APEX_PLAN_TWEAK = "power_plan";
 export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
@@ -208,6 +231,7 @@ export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 export const ACTIVITY_EVENT = "activity://entry";
 export const STATS_EVENT = "stats://tick";
 export const PRESET_PROGRESS_EVENT = "preset://progress";
+export const BENCH_PROGRESS_EVENT = "timer://bench";
 
 export const inTauri = (): boolean => isTauri();
 
@@ -298,6 +322,14 @@ const previewPower: PowerOverview = {
   ],
 };
 
+const previewTimer: TimerStatus = {
+  resolution: { coarsest: 15.625, finest: 0.5, current: 1 },
+  helperAvailable: true,
+  helperRunning: false,
+  units: 5000,
+  autostart: false,
+};
+
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
 
@@ -378,6 +410,30 @@ export const api = {
     return inTauri() ? call<PowerOverview>("power_switch", { guid }) : notInPreview();
   },
 
+  tweakPlan(id: string): Promise<ChangePreview[]> {
+    return inTauri() ? call<ChangePreview[]>("tweak_plan", { id }) : Promise.resolve([]);
+  },
+
+  timerStatus(): Promise<TimerStatus> {
+    return inTauri() ? call<TimerStatus>("timer_status") : Promise.resolve(previewTimer);
+  },
+
+  timerStart(units: number): Promise<TimerStatus> {
+    return inTauri() ? call<TimerStatus>("timer_start", { units }) : notInPreview();
+  },
+
+  timerStop(): Promise<TimerStatus> {
+    return inTauri() ? call<TimerStatus>("timer_stop") : notInPreview();
+  },
+
+  timerSetAutostart(enabled: boolean): Promise<TimerStatus> {
+    return inTauri() ? call<TimerStatus>("timer_set_autostart", { enabled }) : notInPreview();
+  },
+
+  timerBenchmark(): Promise<BenchReport> {
+    return inTauri() ? call<BenchReport>("timer_benchmark") : notInPreview();
+  },
+
   applyPreset(ids: string[]): Promise<BatchReport> {
     return inTauri() ? call<BatchReport>("apply_preset", { ids }) : notInPreview();
   },
@@ -411,4 +467,9 @@ export async function onPresetProgress(handler: (result: BatchResult) => void): 
 export async function onActivity(handler: (entry: ActivityEntry) => void): Promise<UnlistenFn> {
   if (!inTauri()) return () => {};
   return listen<ActivityEntry>(ACTIVITY_EVENT, (event) => handler(event.payload));
+}
+
+export async function onBenchProgress(handler: (done: number, total: number) => void): Promise<UnlistenFn> {
+  if (!inTauri()) return () => {};
+  return listen<[number, number]>(BENCH_PROGRESS_EVENT, (event) => handler(...event.payload));
 }

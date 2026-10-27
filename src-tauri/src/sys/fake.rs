@@ -467,6 +467,102 @@ impl Power for FakePower {
     }
 }
 
+// ---- Scheduled tasks --------------------------------------------------------
+
+#[derive(Default)]
+pub struct FakeTasks {
+    /// path (lower-case) → (display path, xml, enabled)
+    pub tasks: Mutex<BTreeMap<String, (String, String, bool)>>,
+    pub fail: Mutex<Vec<String>>,
+}
+
+impl FakeTasks {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn add(&self, path: &str, enabled: bool) {
+        lock(&self.tasks).insert(
+            path.to_ascii_lowercase(),
+            (path.into(), "<Task/>".into(), enabled),
+        );
+    }
+
+    pub fn enabled(&self, path: &str) -> Option<bool> {
+        lock(&self.tasks)
+            .get(&path.to_ascii_lowercase())
+            .map(|t| t.2)
+    }
+
+    fn check(&self, op: &'static str, path: &str) -> SysResult<()> {
+        if lock(&self.fail)
+            .iter()
+            .any(|f| f.eq_ignore_ascii_case(path))
+        {
+            return Err(SysError::new(
+                SysErrorKind::AccessDenied,
+                op,
+                path,
+                "Access is denied.",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Tasks for FakeTasks {
+    fn get(&self, path: &str) -> SysResult<Option<(String, bool)>> {
+        Ok(lock(&self.tasks)
+            .get(&path.to_ascii_lowercase())
+            .map(|t| (t.1.clone(), t.2)))
+    }
+
+    fn register(&self, path: &str, xml: &str) -> SysResult<()> {
+        self.check("create scheduled task", path)?;
+        lock(&self.tasks).insert(path.to_ascii_lowercase(), (path.into(), xml.into(), true));
+        Ok(())
+    }
+
+    fn delete(&self, path: &str) -> SysResult<()> {
+        self.check("delete scheduled task", path)?;
+        lock(&self.tasks).remove(&path.to_ascii_lowercase());
+        Ok(())
+    }
+
+    fn set_enabled(&self, path: &str, enabled: bool) -> SysResult<()> {
+        self.check("change scheduled task", path)?;
+        let mut tasks = lock(&self.tasks);
+        let task = tasks.get_mut(&path.to_ascii_lowercase()).ok_or_else(|| {
+            SysError::new(
+                SysErrorKind::NotFound,
+                "change scheduled task",
+                path,
+                "The task doesn't exist.",
+            )
+        })?;
+        task.2 = enabled;
+        Ok(())
+    }
+
+    fn list(&self, folder: &str, recursive: bool) -> SysResult<Vec<TaskInfo>> {
+        let prefix = format!("{}\\", folder.trim_end_matches('\\').to_ascii_lowercase());
+        Ok(lock(&self.tasks)
+            .iter()
+            .filter(|(k, _)| {
+                k.starts_with(&prefix) && (recursive || !k[prefix.len()..].contains('\\'))
+            })
+            .map(|(_, (path, _, enabled))| TaskInfo {
+                path: path.clone(),
+                enabled: *enabled,
+            })
+            .collect())
+    }
+
+    fn interactive_account(&self) -> SysResult<String> {
+        Ok(r"PC\gamer".into())
+    }
+}
+
 /// A full fake system plus typed handles to each fake for assertions.
 pub struct FakeSystem {
     pub ctx: SysCtx,
@@ -474,6 +570,7 @@ pub struct FakeSystem {
     pub services: Arc<FakeServices>,
     pub restore_points: Arc<FakeRestorePoints>,
     pub power: Arc<FakePower>,
+    pub tasks: Arc<FakeTasks>,
 }
 
 impl FakeSystem {
@@ -482,11 +579,13 @@ impl FakeSystem {
         let services = FakeServices::new();
         let restore_points = FakeRestorePoints::new(Some(true));
         let power = FakePower::new();
+        let tasks = FakeTasks::new();
         let ctx = SysCtx {
             registry: registry.clone(),
             services: services.clone(),
             restore_points: restore_points.clone(),
             power: power.clone(),
+            tasks: tasks.clone(),
         };
         Self {
             ctx,
@@ -494,6 +593,7 @@ impl FakeSystem {
             services,
             restore_points,
             power,
+            tasks,
         }
     }
 }

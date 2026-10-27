@@ -34,6 +34,23 @@ pub async fn revert_tweak(state: State<'_, EngineState>, id: String) -> AppResul
     .await
 }
 
+/// Exactly what applying one tweak would change, for its confirmation dialog.
+#[tauri::command]
+pub async fn tweak_plan(
+    state: State<'_, EngineState>,
+    id: String,
+) -> AppResult<Vec<crate::tweaks::ChangePreview>> {
+    blocking(state, move |e| {
+        let tweak = e
+            .tweak(&id)
+            .ok_or_else(|| AppError::Other(format!("Unknown tweak {id}")))?;
+        Ok(tweak
+            .plan(e.ctx())
+            .map_err(crate::tweaks::TweakError::from)?)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn preset_preview(state: State<'_, EngineState>) -> AppResult<Vec<PresetItem>> {
     blocking(state, |e| Ok(preset::preview(e)?)).await

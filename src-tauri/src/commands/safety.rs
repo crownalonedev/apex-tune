@@ -82,7 +82,15 @@ pub async fn skip_restore_point(state: State<'_, EngineState>) -> AppResult<Safe
 
 #[tauri::command]
 pub async fn revert_everything(state: State<'_, EngineState>) -> AppResult<RevertReport> {
-    blocking(state, |e| Ok(e.revert_everything())).await
+    blocking(state, |e| {
+        let report = e.revert_everything();
+        // The timer helper isn't a stored setting, but "everything" includes it.
+        if let Err(err) = crate::timer::helper::stop() {
+            tracing::warn!("Couldn't stop the timer helper: {err}");
+        }
+        Ok(report)
+    })
+    .await
 }
 
 #[tauri::command]

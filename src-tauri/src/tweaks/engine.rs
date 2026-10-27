@@ -275,6 +275,20 @@ impl Engine {
         }
     }
 
+    /// Reverts every active entry recorded under an action id, newest first.
+    pub fn revert_action(&mut self, id: &str) -> Result<(), TweakError> {
+        let entries: Vec<EntryRef> = self
+            .journal
+            .active_applies()
+            .filter(|(_, e)| e.tweak_id == id)
+            .map(|(r, _)| r)
+            .collect();
+        for entry in entries {
+            self.revert_entry(entry)?;
+        }
+        Ok(())
+    }
+
     pub fn revert(&mut self, tweak: &dyn Tweak) -> Result<(), TweakError> {
         let applied = self.journal.latest_applied(tweak.id()).ok_or_else(|| {
             TweakError::NoBackup(format!(

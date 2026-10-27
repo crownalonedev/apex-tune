@@ -4,6 +4,7 @@ pub mod power;
 pub mod registry;
 pub mod restore;
 pub mod services;
+pub mod tasks;
 
 use super::{SysError, SysErrorKind};
 

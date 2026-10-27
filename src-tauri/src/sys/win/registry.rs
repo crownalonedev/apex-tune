@@ -304,17 +304,22 @@ fn session_string(session: u32, class: WTS_INFO_CLASS) -> Option<String> {
     s.filter(|s| !s.is_empty())
 }
 
-fn interactive_user_sid() -> Option<String> {
+/// `DOMAIN\user` of whoever is signed in at the console.
+pub(crate) fn interactive_account() -> Option<String> {
     // SAFETY: no arguments; returns 0xFFFFFFFF when there's no console session.
     let session = unsafe { WTSGetActiveConsoleSessionId() };
     if session == u32::MAX {
         return None;
     }
-    let account = HSTRING::from(format!(
+    Some(format!(
         r"{}\{}",
         session_string(session, WTSDomainName)?,
         session_string(session, WTSUserName)?
-    ));
+    ))
+}
+
+fn interactive_user_sid() -> Option<String> {
+    let account = HSTRING::from(interactive_account()?);
 
     let mut sid_len = 0u32;
     let mut domain_len = 0u32;

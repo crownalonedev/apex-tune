@@ -2,17 +2,10 @@ import type { PageId } from "@/lib/routes";
 import { routeById } from "@/lib/routes";
 import { DashboardPage } from "./DashboardPage";
 import { PowerPage } from "./PowerPage";
+import { TimerPage } from "./TimerPage";
 import { PlannedPage } from "./PlannedPage";
 
-const planned: Record<Exclude<PageId, "dashboard" | "power">, { stage: number; items: string[] }> = {
-  timer: {
-    stage: 5,
-    items: [
-      "Current, minimum and maximum timer resolution",
-      "Sleep(1) accuracy benchmark with a recommended value",
-      "Tray helper that holds the resolution while active",
-    ],
-  },
+const planned: Record<Exclude<PageId, "dashboard" | "power" | "timer">, { stage: number; items: string[] }> = {
   debloat: {
     stage: 6,
     items: [
@@ -49,6 +42,7 @@ const planned: Record<Exclude<PageId, "dashboard" | "power">, { stage: number; i
 export function PageView({ page }: { page: PageId }) {
   if (page === "dashboard") return <DashboardPage />;
   if (page === "power") return <PowerPage />;
+  if (page === "timer") return <TimerPage />;
   const { stage, items } = planned[page];
   return <PlannedPage route={routeById(page)} stage={stage} items={items} />;
 }
