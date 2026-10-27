@@ -346,6 +346,45 @@ export interface NvidiaStatus {
   hasBackup: boolean;
 }
 
+export interface ProfileView {
+  format: string;
+  version: number;
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  tweaks: string[];
+  builtIn: boolean;
+  applied: number;
+}
+
+export interface ChangeView {
+  target: string;
+  before: string;
+  after: string;
+}
+
+export interface EntryView {
+  session: string;
+  entry: string;
+  name: string;
+  action: "apply" | "revert" | "system";
+  status: "inProgress" | "done" | "rolledBack" | "rollbackFailed";
+  at: string;
+  error: string | null;
+  revertible: boolean;
+  reverted: boolean;
+  changes: ChangeView[];
+}
+
+export interface SessionView {
+  id: string;
+  startedAt: string;
+  restorePoint: RestorePoint | null;
+  restorePointSkipped: boolean;
+  entries: EntryView[];
+}
+
 export const APEX_PLAN_TWEAK = "power_plan";
 export const BALANCED_PLAN = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
@@ -516,6 +555,11 @@ const previewNvidia: NvidiaStatus = {
   ],
   hasBackup: false,
 };
+
+const previewProfiles: ProfileView[] = [
+  { format: "apex-tune-profile", version: 1, id: "builtin.gaming", name: "Gaming (Safe preset)", description: "The Optimize for Gaming preset.", createdAt: "2026-10-26T12:00:00Z", tweaks: ["game_mode", "game_dvr_off", "windowed_games"], builtIn: true, applied: 1 },
+  { format: "apex-tune-profile", version: 1, id: "builtin.competitive", name: "Competitive", description: "The Safe preset plus Moderate tweaks for lower latency and a lighter desktop.", createdAt: "2026-10-26T12:00:00Z", tweaks: ["game_mode", "game_dvr_off", "windowed_games", "mmcss_responsiveness"], builtIn: true, applied: 1 },
+];
 
 const notInPreview = (): Promise<never> =>
   Promise.reject<never>({ kind: "other", message: "Not available in the browser preview." });
@@ -725,6 +769,42 @@ export const api = {
 
   nvidiaRestoreBackup(): Promise<void> {
     return inTauri() ? call<void>("nvidia_restore_backup") : notInPreview();
+  },
+
+  backupsSessions(): Promise<SessionView[]> {
+    return inTauri() ? call<SessionView[]>("backups_sessions") : Promise.resolve([]);
+  },
+
+  backupsRevertEntry(session: string, entry: string): Promise<void> {
+    return inTauri() ? call<void>("backups_revert_entry", { session, entry }) : notInPreview();
+  },
+
+  openSystemRestore(): Promise<void> {
+    return inTauri() ? call<void>("open_system_restore") : notInPreview();
+  },
+
+  profilesList(): Promise<ProfileView[]> {
+    return inTauri() ? call<ProfileView[]>("profiles_list") : Promise.resolve(previewProfiles);
+  },
+
+  profileSave(name: string): Promise<ProfileView> {
+    return inTauri() ? call<ProfileView>("profile_save", { name }) : notInPreview();
+  },
+
+  profileApply(id: string, exclusive: boolean): Promise<BatchReport> {
+    return inTauri() ? call<BatchReport>("profile_apply", { id, exclusive }) : notInPreview();
+  },
+
+  profileDelete(id: string): Promise<void> {
+    return inTauri() ? call<void>("profile_delete", { id }) : notInPreview();
+  },
+
+  profileExport(id: string, path: string): Promise<void> {
+    return inTauri() ? call<void>("profile_export", { id, path }) : notInPreview();
+  },
+
+  profileImport(path: string): Promise<{ profile: ProfileView; dropped: string[] }> {
+    return inTauri() ? call("profile_import", { path }) : notInPreview();
   },
 
   applyPreset(ids: string[]): Promise<BatchReport> {

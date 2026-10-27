@@ -12,6 +12,7 @@ pub mod nvidia;
 pub mod paths;
 pub mod platform;
 pub mod power;
+pub mod profiles;
 pub mod storage;
 pub mod sys;
 pub mod timer;
@@ -53,6 +54,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(activity.clone())
         .manage(commands::dashboard::HardwareCache::default())
         .manage(hw::stats::Sampler::default())
@@ -123,6 +125,15 @@ pub fn run() {
             commands::nvidia::nvidia_set_game,
             commands::nvidia::nvidia_set_fps,
             commands::nvidia::nvidia_restore_backup,
+            commands::profiles::backups_sessions,
+            commands::profiles::backups_revert_entry,
+            commands::profiles::open_system_restore,
+            commands::profiles::profiles_list,
+            commands::profiles::profile_save,
+            commands::profiles::profile_apply,
+            commands::profiles::profile_delete,
+            commands::profiles::profile_export,
+            commands::profiles::profile_import,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Apex Tune");

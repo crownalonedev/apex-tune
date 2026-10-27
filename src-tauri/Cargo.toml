@@ -52,6 +52,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 sysinfo = "0.39"
 apex-timer = { path = "apex-timer", default-features = false }
+tauri-plugin-dialog = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

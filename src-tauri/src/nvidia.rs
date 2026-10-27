@@ -275,10 +275,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut engine = engine(&sys, dir.path());
         let tweak = GlobalProfile::new();
-        let data = tempfile::tempdir().unwrap();
-        // SAFETY: test-only override of where backups go.
-        unsafe { std::env::set_var("APEX_TUNE_DATA_DIR", data.path()) };
-        std::fs::create_dir_all(crate::paths::backups_dir()).unwrap();
+        crate::paths::use_test_data_dir();
         engine.apply(&tweak).unwrap();
         assert_eq!(
             sys.nvidia.exports.lock().unwrap().len(),
@@ -357,10 +354,7 @@ mod tests {
     fn backup_happens_once_per_session() {
         let sys = FakeSystem::new();
         *sys.nvidia.present.lock().unwrap() = true;
-        let dir = tempfile::tempdir().unwrap();
-        // SAFETY: tests in this module don't read APEX_TUNE_DATA_DIR concurrently with other writers.
-        unsafe { std::env::set_var("APEX_TUNE_DATA_DIR", dir.path()) };
-        std::fs::create_dir_all(crate::paths::backups_dir()).unwrap();
+        crate::paths::use_test_data_dir();
         let session = uuid::Uuid::new_v4();
         ensure_backup(&sys.ctx, session).unwrap();
         ensure_backup(&sys.ctx, session).unwrap();

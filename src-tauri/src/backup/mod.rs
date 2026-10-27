@@ -2,3 +2,4 @@
 
 pub mod journal;
 pub mod restore_point;
+pub mod view;

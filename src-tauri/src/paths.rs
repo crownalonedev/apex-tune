@@ -50,3 +50,16 @@ pub fn ensure_dirs() -> std::io::Result<()> {
     }
     Ok(())
 }
+
+/// Points every test at one shared temporary data folder. Tests run in
+/// parallel, so they must agree on a single location.
+#[cfg(test)]
+pub fn use_test_data_dir() {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    let dir = DIR.get_or_init(|| tempfile::tempdir().expect("temp dir"));
+    // SAFETY: every caller sets the same value, so concurrent writes agree.
+    unsafe { std::env::set_var(ROOT_ENV_OVERRIDE, dir.path()) };
+    for d in [backups_dir(), logs_dir(), profiles_dir()] {
+        std::fs::create_dir_all(d).expect("test data folders");
+    }
+}

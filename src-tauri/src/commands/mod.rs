@@ -6,6 +6,7 @@ pub mod debloat;
 pub mod extras;
 pub mod nvidia;
 pub mod power;
+pub mod profiles;
 pub mod safety;
 pub mod timer;
 pub mod tweaks;
